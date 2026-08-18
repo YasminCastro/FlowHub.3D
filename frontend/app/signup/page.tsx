@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 import Link from "next/link";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
@@ -21,6 +20,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Logo } from "@/components/logo";
 import { ApiError } from "@/lib/auth";
 import { useAuth } from "@/lib/auth-context";
 
@@ -85,20 +85,8 @@ export default function SignupPage() {
             "radial-gradient(120% 90% at 0% 100%, var(--brand-900) 0%, transparent 62%)",
         }}
       >
-        <div className="absolute top-12 left-12 flex items-center gap-3">
-          <Image
-            src="/flowhub3d.png"
-            alt=""
-            width={34}
-            height={34}
-            className="object-contain"
-          />
-          <div>
-            <p className="font-heading text-base font-medium">FlowHub.3D</p>
-            <p className="text-[11.5px] text-muted-foreground">
-              Impressão 3D
-            </p>
-          </div>
+        <div className="absolute top-12 left-12">
+          <Logo />
         </div>
 
         <div className="flex flex-col gap-6">
