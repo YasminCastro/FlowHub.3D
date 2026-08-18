@@ -35,14 +35,20 @@ function passwordStrength(password: string) {
   return { score, label };
 }
 
-const signupSchema = z.object({
-  name: z.string().trim().min(1, "Informe seu nome."),
-  email: z.email("E-mail inválido."),
-  password: z.string().min(8, "Use pelo menos 8 caracteres."),
-  acceptedTerms: z.boolean().refine((value) => value === true, {
-    message: "Aceite os termos e a política de privacidade para continuar.",
-  }),
-});
+const signupSchema = z
+  .object({
+    name: z.string().trim().min(1, "Informe seu nome."),
+    email: z.email("E-mail inválido."),
+    password: z.string().min(8, "Use pelo menos 8 caracteres."),
+    confirmPassword: z.string().min(1, "Confirme sua senha."),
+    acceptedTerms: z.boolean().refine((value) => value === true, {
+      message: "Aceite os termos e a política de privacidade para continuar.",
+    }),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "As senhas não coincidem.",
+    path: ["confirmPassword"],
+  });
 
 type SignupValues = z.infer<typeof signupSchema>;
 
@@ -50,11 +56,18 @@ export default function SignupPage() {
   const router = useRouter();
   const { register } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const form = useForm<SignupValues>({
     resolver: zodResolver(signupSchema),
-    defaultValues: { name: "", email: "", password: "", acceptedTerms: false },
+    defaultValues: {
+      name: "",
+      email: "",
+      password: "",
+      confirmPassword: "",
+      acceptedTerms: false,
+    },
   });
 
   const password = useWatch({ control: form.control, name: "password" });
@@ -262,6 +275,42 @@ export default function SignupPage() {
                       </span>
                     </div>
                   )}
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="confirmPassword"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Confirmar senha</FormLabel>
+                  <div className="relative">
+                    <FormControl>
+                      <Input
+                        type={showConfirmPassword ? "text" : "password"}
+                        autoComplete="new-password"
+                        className="pr-9"
+                        {...field}
+                      />
+                    </FormControl>
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword((v) => !v)}
+                      aria-label={
+                        showConfirmPassword ? "Ocultar senha" : "Mostrar senha"
+                      }
+                      aria-pressed={showConfirmPassword}
+                      className="absolute top-1/2 right-2.5 -translate-y-1/2 text-muted-foreground"
+                    >
+                      {showConfirmPassword ? (
+                        <EyeOff className="size-3.75" aria-hidden="true" />
+                      ) : (
+                        <Eye className="size-3.75" aria-hidden="true" />
+                      )}
+                    </button>
+                  </div>
                   <FormMessage />
                 </FormItem>
               )}
