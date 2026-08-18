@@ -11,7 +11,9 @@ import {
   login as loginRequest,
   logout as logoutRequest,
   refreshAccessToken,
+  resendCode as resendCodeRequest,
   signup as signupRequest,
+  verifyEmail as verifyEmailRequest,
 } from "@/lib/auth";
 
 type AuthContextValue = {
@@ -19,6 +21,8 @@ type AuthContextValue = {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name?: string) => Promise<void>;
+  verifyEmail: (email: string, code: string) => Promise<void>;
+  resendCode: (email: string) => Promise<void>;
   logout: () => Promise<void>;
 };
 
@@ -42,11 +46,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const register = useCallback(
     async (email: string, password: string, name?: string) => {
       await signupRequest(email, password, name);
-      const data = await loginRequest(email, password);
-      setAccessTokenState(data.accessToken);
     },
     [],
   );
+
+  const verifyEmail = useCallback(async (email: string, code: string) => {
+    const data = await verifyEmailRequest(email, code);
+    setAccessTokenState(data.accessToken);
+  }, []);
+
+  const resendCode = useCallback(async (email: string) => {
+    await resendCodeRequest(email);
+  }, []);
 
   const logout = useCallback(async () => {
     await logoutRequest();
@@ -55,7 +66,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ accessToken, isLoading, login, register, logout }}
+      value={{
+        accessToken,
+        isLoading,
+        login,
+        register,
+        verifyEmail,
+        resendCode,
+        logout,
+      }}
     >
       {children}
     </AuthContext.Provider>

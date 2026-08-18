@@ -27,7 +27,7 @@ export class AuthService {
   async signup(dto: SignupDto) {
     const exists = await this.userService.user({ email: dto.email });
     if (exists) {
-      throw new ConflictException('User already exists');
+      throw new ConflictException('Este e-mail já está cadastrado');
     }
 
     const hashedCode = await this.sendVerificationEmail(dto.email);
@@ -41,23 +41,23 @@ export class AuthService {
       verificationCodeExpiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
     });
 
-    return { message: 'User created successfully', user: created.email };
+    return { message: 'Conta criada com sucesso', user: created.email };
   }
 
   async verifyEmail(dto: VerifyEmailDto) {
     const user = await this.userService.user({ email: dto.email });
     if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException('Credenciais inválidas');
     }
     if (!user.verificationCode || !user.verificationCodeExpiresAt) {
-      throw new UnauthorizedException('No verification code found');
+      throw new UnauthorizedException('Nenhum código de verificação encontrado');
     }
     if (user.verificationCodeExpiresAt < new Date()) {
-      throw new UnauthorizedException('Verification code has expired');
+      throw new UnauthorizedException('Este código expirou. Peça um novo código.');
     }
     const isCodeValid = await bcrypt.compare(dto.code, user.verificationCode);
     if (!isCodeValid) {
-      throw new UnauthorizedException('Invalid verification code');
+      throw new UnauthorizedException('Código de verificação inválido');
     }
 
     await this.userService.updateUser({
@@ -71,13 +71,13 @@ export class AuthService {
 
     const tokens = await this.issueTokens(user.id, user.email);
 
-    return { message: 'Email verified successfully', ...tokens };
+    return { message: 'E-mail verificado com sucesso', ...tokens };
   }
 
   async resendCode(dto: ResendCodeDto) {
     const user = await this.userService.user({ email: dto.email });
     if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException('Credenciais inválidas');
     }
     const hashedCode = await this.sendVerificationEmail(dto.email);
 
@@ -88,29 +88,29 @@ export class AuthService {
         verificationCodeExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
       },
     });
-    return { message: 'Verification code resent successfully' };
+    return { message: 'Código de verificação reenviado com sucesso' };
   }
 
   async login(dto: LoginDto) {
     const user = await this.userService.user({ email: dto.email });
     if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException('Credenciais inválidas');
     }
 
     const isPasswordValid = await bcrypt.compare(dto.password, user.password);
     if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException('Credenciais inválidas');
     }
 
     if (!user.isEmailVerified) {
-      throw new UnauthorizedException('Email not verified');
+      throw new UnauthorizedException('E-mail não verificado');
     }
 
     const tokens = await this.issueTokens(user.id, user.email);
-    return { message: 'Login successful', ...tokens };
+    return { message: 'Login realizado com sucesso', ...tokens };
   }
 
-  async refresh(userId: number, refreshToken: string) {
+  async refresh(userId: string, refreshToken: string) {
     const user = await this.userService.user({ id: userId });
     if (!user?.hashedRefreshToken) {
       throw new UnauthorizedException();
@@ -124,14 +124,14 @@ export class AuthService {
     return this.issueTokens(user.id, user.email);
   }
 
-  async logout(userId: number) {
+  async logout(userId: string) {
     await this.userService.updateUser({
       where: { id: userId },
       data: { hashedRefreshToken: null },
     });
   }
 
-  private async issueTokens(userId: number, email: string) {
+  private async issueTokens(userId: string, email: string) {
     const payload = { sub: userId, email };
 
     const accessToken = this.signToken(
@@ -157,7 +157,7 @@ export class AuthService {
   }
 
   private signToken(
-    payload: { sub: number; email: string },
+    payload: { sub: string; email: string },
     secretKey: 'JWT_SECRET' | 'JWT_REFRESH_SECRET',
     expiresInKey: 'JWT_EXPIRES_IN' | 'JWT_REFRESH_EXPIRES_IN',
     fallbackExpiresIn: `${number}${'s' | 'm' | 'h' | 'd'}`,

@@ -20,7 +20,7 @@ export class JwtRefreshStrategy extends PassportStrategy(
     });
   }
 
-  validate(req: Request, payload: { sub: number; email: string }) {
+  validate(req: Request, payload: { sub: string; email: string }) {
     const refreshToken = req.cookies?.refreshToken as string | undefined;
     if (!refreshToken) {
       throw new UnauthorizedException();

@@ -38,7 +38,7 @@ export class UserController {
   @Get(':id')
   @ApiOkResponse({ type: UserEntity })
   async findOne(@Param('id') id: string): Promise<UserEntity> {
-    const user = await this.userService.user({ id: Number(id) });
+    const user = await this.userService.user({ id });
     if (!user) {
       throw new NotFoundException(`User ${id} not found`);
     }
@@ -50,11 +50,11 @@ export class UserController {
     @Param('id') id: string,
     @Body() data: Prisma.UserUpdateInput,
   ): Promise<User> {
-    return this.userService.updateUser({ where: { id: Number(id) }, data });
+    return this.userService.updateUser({ where: { id }, data });
   }
 
   @Delete(':id')
   remove(@Param('id') id: string): Promise<User> {
-    return this.userService.deleteUser({ id: Number(id) });
+    return this.userService.deleteUser({ id });
   }
 }

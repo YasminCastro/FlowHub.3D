@@ -54,6 +54,32 @@ export async function login(email: string, password: string) {
   return data;
 }
 
+export async function verifyEmail(email: string, code: string) {
+  const res = await fetch(`${API_URL}/auth/verify-email`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ email, code }),
+  });
+
+  const data = (await parseResponse(res)) as {
+    message: string;
+    accessToken: string;
+  };
+  setAccessToken(data.accessToken);
+  return data;
+}
+
+export async function resendCode(email: string) {
+  const res = await fetch(`${API_URL}/auth/resend-code`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+
+  return (await parseResponse(res)) as { message: string };
+}
+
 export async function refreshAccessToken() {
   const res = await fetch(`${API_URL}/auth/refresh`, {
     method: "POST",

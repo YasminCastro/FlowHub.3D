@@ -13,7 +13,7 @@ const REFRESH_COOKIE = 'refreshToken';
 const REFRESH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 
 interface RefreshRequest {
-  user: { userId: number; refreshToken: string };
+  user: { userId: string; refreshToken: string };
 }
 
 @ApiTags('auth')

@@ -78,7 +78,7 @@ export default function SignupPage() {
     setError(null);
     try {
       await register(values.email, values.password, values.name);
-      router.push("/");
+      router.push(`/verify-email?email=${encodeURIComponent(values.email)}`);
     } catch (err) {
       setError(
         err instanceof ApiError

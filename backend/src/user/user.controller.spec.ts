@@ -14,7 +14,7 @@ describe('UserController', () => {
   let userService: MockUserService;
 
   const mockUser: User = {
-    id: 1,
+    id: '11111111-1111-4111-8111-111111111111',
     email: 'test@example.com',
     name: 'Test User',
     password: 'hashed-password',
@@ -72,7 +72,7 @@ describe('UserController', () => {
       const result = await controller.findOne('1');
 
       expect(result).toEqual(mockUser);
-      expect(userService.user).toHaveBeenCalledWith({ id: 1 });
+      expect(userService.user).toHaveBeenCalledWith({ id: '1' });
     });
 
     it('should throw NotFoundException when user does not exist', async () => {
@@ -93,7 +93,7 @@ describe('UserController', () => {
 
       expect(result).toEqual(updatedUser);
       expect(userService.updateUser).toHaveBeenCalledWith({
-        where: { id: 1 },
+        where: { id: '1' },
         data: { name: 'Updated Name' },
       });
     });
@@ -106,7 +106,7 @@ describe('UserController', () => {
       const result = await controller.remove('1');
 
       expect(result).toEqual(mockUser);
-      expect(userService.deleteUser).toHaveBeenCalledWith({ id: 1 });
+      expect(userService.deleteUser).toHaveBeenCalledWith({ id: '1' });
     });
   });
 });

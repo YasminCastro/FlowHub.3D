@@ -7,7 +7,7 @@ export class UserEntity implements Omit<
   'password' | 'hashedRefreshToken'
 > {
   @ApiProperty()
-  id!: number;
+  id!: string;
 
   @ApiProperty()
   email!: string;
