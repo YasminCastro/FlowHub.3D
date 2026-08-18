@@ -6,10 +6,17 @@ import { UserService } from './user/user.service.js';
 import { UserController } from './user/user.controller.js';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module.js';
+import { JwtAuthGuard } from './auth/guards/jwt-auth.guard.js';
+import { APP_GUARD } from '@nestjs/core';
 
 @Module({
   imports: [ConfigModule.forRoot({ isGlobal: true }), AuthModule],
   controllers: [AppController, UserController],
-  providers: [AppService, PrismaService, UserService],
+  providers: [
+    AppService,
+    PrismaService,
+    UserService,
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+  ],
 })
 export class AppModule {}
