@@ -7,7 +7,17 @@ import { AuthService } from './auth.service.js';
 describe('AuthController', () => {
   let controller: AuthController;
   let authService: jest.Mocked<
-    Pick<AuthService, 'signup' | 'login' | 'refresh' | 'logout'>
+    Pick<
+      AuthService,
+      | 'signup'
+      | 'login'
+      | 'refresh'
+      | 'logout'
+      | 'verifyEmail'
+      | 'resendCode'
+      | 'forgotPassword'
+      | 'resetPassword'
+    >
   >;
   let res: jest.Mocked<Pick<Response, 'cookie' | 'clearCookie'>>;
 
@@ -17,6 +27,10 @@ describe('AuthController', () => {
       login: jest.fn(),
       refresh: jest.fn(),
       logout: jest.fn(),
+      verifyEmail: jest.fn(),
+      resendCode: jest.fn(),
+      forgotPassword: jest.fn(),
+      resetPassword: jest.fn(),
     };
     res = {
       cookie: jest.fn(),
@@ -46,6 +60,109 @@ describe('AuthController', () => {
 
     expect(authService.signup).toHaveBeenCalledWith(dto);
     expect(result.user).toBe(dto.email);
+  });
+
+  describe('verifyEmail', () => {
+    const dto = { email: 'a@a.com', code: '123456' };
+
+    it('should delegate to AuthService.verifyEmail', async () => {
+      authService.verifyEmail.mockResolvedValue({
+        message: 'E-mail verificado com sucesso',
+        accessToken: 'fake-access-token',
+        refreshToken: 'fake-refresh-token',
+      });
+
+      const result = await controller.verifyEmail(dto as any, res as any);
+
+      expect(authService.verifyEmail).toHaveBeenCalledWith(dto);
+      expect(result).toEqual({
+        message: 'E-mail verificado com sucesso',
+        accessToken: 'fake-access-token',
+      });
+    });
+
+    it('should set the refresh token as an httpOnly cookie', async () => {
+      authService.verifyEmail.mockResolvedValue({
+        message: 'E-mail verificado com sucesso',
+        accessToken: 'fake-access-token',
+        refreshToken: 'fake-refresh-token',
+      });
+
+      await controller.verifyEmail(dto as any, res as any);
+
+      expect(res.cookie).toHaveBeenCalledWith(
+        'refreshToken',
+        'fake-refresh-token',
+        expect.objectContaining({
+          httpOnly: true,
+          sameSite: 'lax',
+        }),
+      );
+    });
+
+    it('should not leak the refresh token in the response body', async () => {
+      authService.verifyEmail.mockResolvedValue({
+        message: 'E-mail verificado com sucesso',
+        accessToken: 'fake-access-token',
+        refreshToken: 'fake-refresh-token',
+      });
+
+      const result = await controller.verifyEmail(dto as any, res as any);
+
+      expect(result).not.toHaveProperty('refreshToken');
+    });
+  });
+
+  describe('resendCode', () => {
+    it('should delegate to AuthService.resendCode', async () => {
+      const dto = { email: 'a@a.com' };
+      authService.resendCode.mockResolvedValue({
+        message: 'Código de verificação reenviado com sucesso',
+      });
+
+      const result = await controller.resendCode(dto as any);
+
+      expect(authService.resendCode).toHaveBeenCalledWith(dto);
+      expect(result).toEqual({
+        message: 'Código de verificação reenviado com sucesso',
+      });
+    });
+  });
+
+  describe('forgotPassword', () => {
+    it('should delegate to AuthService.forgotPassword', async () => {
+      const dto = { email: 'a@a.com' };
+      authService.forgotPassword.mockResolvedValue({
+        message:
+          'Se o e-mail estiver cadastrado, um código de redefinição de senha foi enviado.',
+      });
+
+      const result = await controller.forgotPassword(dto as any);
+
+      expect(authService.forgotPassword).toHaveBeenCalledWith(dto);
+      expect(result).toEqual({
+        message:
+          'Se o e-mail estiver cadastrado, um código de redefinição de senha foi enviado.',
+      });
+    });
+  });
+
+  describe('resetPassword', () => {
+    it('should delegate to AuthService.resetPassword', async () => {
+      const dto = {
+        email: 'a@a.com',
+        newPassword: 'newpassword123',
+        code: '123456',
+      };
+      authService.resetPassword.mockResolvedValue({
+        message: 'Senha redefinida com sucesso.',
+      });
+
+      const result = await controller.resetPassword(dto as any);
+
+      expect(authService.resetPassword).toHaveBeenCalledWith(dto);
+      expect(result).toEqual({ message: 'Senha redefinida com sucesso.' });
+    });
   });
 
   describe('login', () => {
