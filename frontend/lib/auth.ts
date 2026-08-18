@@ -28,6 +28,16 @@ async function parseResponse(res: Response) {
   return data;
 }
 
+export async function signup(email: string, password: string, name?: string) {
+  const res = await fetch(`${API_URL}/auth/signup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, name }),
+  });
+
+  return (await parseResponse(res)) as { message: string; user: string };
+}
+
 export async function login(email: string, password: string) {
   const res = await fetch(`${API_URL}/auth/login`, {
     method: "POST",

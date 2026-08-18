@@ -26,7 +26,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${inter.variable} ${geistMono.variable} h-full antialiased dark`}
     >
       <body className="min-h-full flex flex-col">
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <main className="flex flex-1 flex-col">{children}</main>
+        </AuthProvider>
       </body>
     </html>
   );

@@ -4,43 +4,61 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { Eye } from "lucide-react";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { Eye, EyeOff } from "lucide-react";
 import { FcGoogle } from "react-icons/fc";
 
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/auth";
 import { useAuth } from "@/lib/auth-context";
+
+const loginSchema = z.object({
+  email: z.email("E-mail inválido."),
+  password: z.string().min(1, "Informe sua senha."),
+});
+
+type LoginValues = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
   const router = useRouter();
   const { login } = useAuth();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  const form = useForm<LoginValues>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: { email: "", password: "" },
+  });
+
+  const isSubmitting = form.formState.isSubmitting;
+
+  async function onSubmit(values: LoginValues) {
     setError(null);
-    setIsSubmitting(true);
     try {
-      await login(email, password);
+      await login(values.email, values.password);
       router.push("/");
     } catch (err) {
       setError(
         err instanceof ApiError ? err.message : "Não foi possível entrar.",
       );
-    } finally {
-      setIsSubmitting(false);
     }
   }
 
   return (
     <div className="grid flex-1 md:grid-cols-[1.05fr_1fr]">
-      <div
+      <aside
+        aria-hidden="true"
         className="relative hidden flex-col justify-end gap-8 overflow-hidden bg-[#1b1d2c] p-12 lg:p-20 md:flex"
         style={{
           backgroundImage:
@@ -50,23 +68,23 @@ export default function LoginPage() {
         <div className="absolute top-12 left-12 flex items-center gap-3">
           <Image
             src="/flowhub3d.png"
-            alt="FlowHub.3D"
+            alt=""
             width={34}
             height={34}
             className="object-contain"
           />
           <div>
-            <div className="font-heading text-base font-medium">FlowHub.3D</div>
-            <div className="text-[11.5px] text-muted-foreground">
+            <p className="font-heading text-base font-medium">FlowHub.3D</p>
+            <p className="text-[11.5px] text-muted-foreground">
               Impressão 3D
-            </div>
+            </p>
           </div>
         </div>
 
         <div className="flex flex-col gap-6">
-          <h1 className="max-w-96 text-5xl leading-[1.14] text-balance">
+          <p className="max-w-96 text-5xl leading-[1.14] text-balance">
             Cada rolo, cada peça, cada valor que funcionou.
-          </h1>
+          </p>
           <div className="flex items-stretch gap-6">
             <div className="flex flex-col gap-1.5">
               <div className="text-xs text-muted-foreground">Rolos</div>
@@ -88,22 +106,28 @@ export default function LoginPage() {
             e o perfil que já deu certo naquele filamento.
           </p>
         </div>
-      </div>
+      </aside>
 
-      <div className="flex min-w-0 flex-col justify-center bg-card p-12 md:p-15">
+      <section
+        aria-labelledby="login-heading"
+        className="flex min-w-0 flex-col justify-center bg-card p-12 md:p-15"
+      >
         <div className="mb-8 flex flex-col gap-1.5">
-          <div className="text-xs text-muted-foreground">Entrar</div>
-          <h2 className="text-2xl font-medium">Bem-vinda de volta</h2>
+          <p className="text-xs text-muted-foreground">Entrar</p>
+          <h1 id="login-heading" className="text-2xl font-medium">
+            Bem-vinda de volta
+          </h1>
           <p className="text-sm text-muted-foreground">
             Use a mesma conta de sempre para achar seus registros.
           </p>
         </div>
 
         <Button
+          type="button"
           variant="secondary"
           className="h-11 w-full justify-center gap-2.5"
         >
-          <FcGoogle className="size-5" />
+          <FcGoogle className="size-5" aria-hidden="true" />
           Continuar com Google
         </Button>
 
@@ -115,56 +139,93 @@ export default function LoginPage() {
           <hr className="fade-rule flex-1" />
         </div>
 
-        <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-          <div className="grid gap-1.5">
-            <Label htmlFor="lg-mail">E-mail</Label>
-            <Input
-              id="lg-mail"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-          </div>
-          <div className="grid gap-1.5">
-            <div className="flex items-baseline gap-2.5">
-              <Label htmlFor="lg-pw">Senha</Label>
-              <Link
-                href="#"
-                className="ml-auto text-[11.5px] text-brand hover:underline"
-              >
-                Esqueci a senha
-              </Link>
-            </div>
-            <div className="relative">
-              <Input
-                id="lg-pw"
-                type="password"
-                className="pr-9"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-              <Eye className="absolute top-1/2 right-2.5 size-3.75 -translate-y-1/2 cursor-pointer text-muted-foreground" />
-            </div>
-          </div>
-          {error && <p className="text-[12.5px] text-destructive">{error}</p>}
-          <Button
-            type="submit"
-            className="mt-1 h-11 w-full justify-center"
-            disabled={isSubmitting}
+        <Form {...form}>
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={form.handleSubmit(onSubmit)}
+            noValidate
           >
-            {isSubmitting ? "Entrando..." : "Entrar"}
-          </Button>
-        </form>
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>E-mail</FormLabel>
+                  <FormControl>
+                    <Input type="email" autoComplete="email" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="password"
+              render={({ field }) => (
+                <FormItem>
+                  <div className="flex items-baseline gap-2.5">
+                    <FormLabel>Senha</FormLabel>
+                    <Link
+                      href="#"
+                      className="ml-auto text-[11.5px] text-brand hover:underline"
+                    >
+                      Esqueci a senha
+                    </Link>
+                  </div>
+                  <div className="relative">
+                    <FormControl>
+                      <Input
+                        type={showPassword ? "text" : "password"}
+                        autoComplete="current-password"
+                        className="pr-9"
+                        {...field}
+                      />
+                    </FormControl>
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      aria-label={
+                        showPassword ? "Ocultar senha" : "Mostrar senha"
+                      }
+                      aria-pressed={showPassword}
+                      className="absolute top-1/2 right-2.5 -translate-y-1/2 text-muted-foreground"
+                    >
+                      {showPassword ? (
+                        <EyeOff className="size-3.75" aria-hidden="true" />
+                      ) : (
+                        <Eye className="size-3.75" aria-hidden="true" />
+                      )}
+                    </button>
+                  </div>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {error && (
+              <p role="alert" className="text-[12.5px] text-destructive">
+                {error}
+              </p>
+            )}
+            <Button
+              type="submit"
+              className="mt-1 h-11 w-full justify-center"
+              disabled={isSubmitting}
+              aria-busy={isSubmitting}
+            >
+              {isSubmitting ? "Entrando..." : "Entrar"}
+            </Button>
+          </form>
+        </Form>
 
         <p className="mt-6 text-[12.5px] text-muted-foreground">
           Primeira vez aqui?{" "}
-          <Link href="#" className="text-brand hover:underline">
+          <Link href="/signup" className="text-brand hover:underline">
             Criar uma conta
           </Link>
         </p>
-      </div>
+      </section>
     </div>
   );
 }
