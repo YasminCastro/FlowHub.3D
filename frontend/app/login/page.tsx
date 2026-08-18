@@ -47,7 +47,7 @@ export default function LoginPage() {
     setError(null);
     try {
       await login(values.email, values.password);
-      router.push("/");
+      router.push("/dashboard");
     } catch (err) {
       setError(
         err instanceof ApiError ? err.message : "Não foi possível entrar.",
