@@ -8,8 +8,12 @@ import { UserService } from '../user/user.service.js';
 import { SignupDto } from './dto/signup.dto.js';
 
 import bcrypt from 'bcrypt';
+import { randomInt } from 'node:crypto';
 import { LoginDto } from './dto/login.dto.js';
 import { JwtService } from '@nestjs/jwt';
+import { MailService } from '../mail/mail.service.js';
+import { VerifyEmailDto } from './dto/verify-email.dto.js';
+import { ResendCodeDto } from './dto/resend-code.dto.js';
 
 @Injectable()
 export class AuthService {
@@ -17,6 +21,7 @@ export class AuthService {
     private userService: UserService,
     private jwtService: JwtService,
     private config: ConfigService,
+    private mailService: MailService,
   ) {}
 
   async signup(dto: SignupDto) {
@@ -25,13 +30,65 @@ export class AuthService {
       throw new ConflictException('User already exists');
     }
 
+    const hashedCode = await this.sendVerificationEmail(dto.email);
+
     const hashedPassword = await bcrypt.hash(dto.password, 10);
     const created = await this.userService.createUser({
       email: dto.email,
       password: hashedPassword,
       name: dto.name,
+      verificationCode: hashedCode,
+      verificationCodeExpiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
     });
+
     return { message: 'User created successfully', user: created.email };
+  }
+
+  async verifyEmail(dto: VerifyEmailDto) {
+    const user = await this.userService.user({ email: dto.email });
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    if (!user.verificationCode || !user.verificationCodeExpiresAt) {
+      throw new UnauthorizedException('No verification code found');
+    }
+    if (user.verificationCodeExpiresAt < new Date()) {
+      throw new UnauthorizedException('Verification code has expired');
+    }
+    const isCodeValid = await bcrypt.compare(dto.code, user.verificationCode);
+    if (!isCodeValid) {
+      throw new UnauthorizedException('Invalid verification code');
+    }
+
+    await this.userService.updateUser({
+      where: { id: user.id },
+      data: {
+        verificationCode: null,
+        verificationCodeExpiresAt: null,
+        isEmailVerified: true,
+      },
+    });
+
+    const tokens = await this.issueTokens(user.id, user.email);
+
+    return { message: 'Email verified successfully', ...tokens };
+  }
+
+  async resendCode(dto: ResendCodeDto) {
+    const user = await this.userService.user({ email: dto.email });
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    const hashedCode = await this.sendVerificationEmail(dto.email);
+
+    await this.userService.updateUser({
+      where: { id: user.id },
+      data: {
+        verificationCode: hashedCode,
+        verificationCodeExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      },
+    });
+    return { message: 'Verification code resent successfully' };
   }
 
   async login(dto: LoginDto) {
@@ -43,6 +100,10 @@ export class AuthService {
     const isPasswordValid = await bcrypt.compare(dto.password, user.password);
     if (!isPasswordValid) {
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (!user.isEmailVerified) {
+      throw new UnauthorizedException('Email not verified');
     }
 
     const tokens = await this.issueTokens(user.id, user.email);
@@ -106,5 +167,14 @@ export class AuthService {
       expiresIn: (this.config.get<string>(expiresInKey) ??
         fallbackExpiresIn) as `${number}${'s' | 'm' | 'h' | 'd'}`,
     });
+  }
+
+  private async sendVerificationEmail(email: string) {
+    const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
+    const hashedCode = await bcrypt.hash(code, 10);
+
+    await this.mailService.sendVerificationCode(email, code);
+
+    return hashedCode;
   }
 }

@@ -7,9 +7,11 @@ import { UserService } from '../user/user.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { JwtStrategy } from './strategies/jwt.strategy.js';
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy.js';
+import { MailModule } from '../mail/mail.module.js';
 
 @Module({
   imports: [
+    MailModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

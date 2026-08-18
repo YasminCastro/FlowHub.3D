@@ -6,6 +6,8 @@ import { SignupDto } from './dto/signup.dto.js';
 import { Public } from './decorators/public.decorator.js';
 import { LoginDto } from './dto/login.dto.js';
 import { JwtRefreshAuthGuard } from './guards/jwt-refresh-auth.guard.js';
+import { VerifyEmailDto } from './dto/verify-email.dto.js';
+import { ResendCodeDto } from './dto/resend-code.dto.js';
 
 const REFRESH_COOKIE = 'refreshToken';
 const REFRESH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
@@ -23,6 +25,23 @@ export class AuthController {
   @Public()
   signup(@Body() dto: SignupDto) {
     return this.authService.signup(dto);
+  }
+
+  @Post('verify-email')
+  @Public()
+  async verifyEmail(
+    @Body() dto: VerifyEmailDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { refreshToken, ...body } = await this.authService.verifyEmail(dto);
+    this.setRefreshCookie(res, refreshToken);
+    return body;
+  }
+
+  @Post('resend-code')
+  @Public()
+  resendCode(@Body() dto: ResendCodeDto) {
+    return this.authService.resendCode(dto);
   }
 
   @Post('login')
