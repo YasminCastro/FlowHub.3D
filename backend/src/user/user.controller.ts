@@ -1,5 +1,6 @@
 import {
   Body,
+  ClassSerializerInterceptor,
   Controller,
   Delete,
   Get,
@@ -7,32 +8,41 @@ import {
   Param,
   Patch,
   Query,
+  UseInterceptors,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { UserService } from './user.service.js';
 import { Prisma, User } from '../generated/prisma/client.js';
+import { UserEntity } from './entities/user.entity.js';
 
+@ApiTags('user')
+@ApiBearerAuth()
+@UseInterceptors(ClassSerializerInterceptor)
 @Controller('user')
 export class UserController {
   constructor(private readonly userService: UserService) {}
 
   @Get()
-  findAll(
+  @ApiOkResponse({ type: UserEntity, isArray: true })
+  async findAll(
     @Query('skip') skip?: string,
     @Query('take') take?: string,
-  ): Promise<User[]> {
-    return this.userService.users({
+  ): Promise<UserEntity[]> {
+    const users = await this.userService.users({
       skip: skip ? Number(skip) : undefined,
       take: take ? Number(take) : undefined,
     });
+    return users.map((user) => new UserEntity(user));
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string): Promise<User> {
+  @ApiOkResponse({ type: UserEntity })
+  async findOne(@Param('id') id: string): Promise<UserEntity> {
     const user = await this.userService.user({ id: Number(id) });
     if (!user) {
       throw new NotFoundException(`User ${id} not found`);
     }
-    return user;
+    return new UserEntity(user);
   }
 
   @Patch(':id')
