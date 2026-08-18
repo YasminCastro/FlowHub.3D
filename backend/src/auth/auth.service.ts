@@ -14,6 +14,8 @@ import { JwtService } from '@nestjs/jwt';
 import { MailService } from '../mail/mail.service.js';
 import { VerifyEmailDto } from './dto/verify-email.dto.js';
 import { ResendCodeDto } from './dto/resend-code.dto.js';
+import { ForgotPasswordDto } from './dto/forgot-password.dto.js';
+import { ResetPasswordDto } from './dto/reset-password.dto.js';
 
 @Injectable()
 export class AuthService {
@@ -50,10 +52,14 @@ export class AuthService {
       throw new UnauthorizedException('Credenciais inválidas');
     }
     if (!user.verificationCode || !user.verificationCodeExpiresAt) {
-      throw new UnauthorizedException('Nenhum código de verificação encontrado');
+      throw new UnauthorizedException(
+        'Nenhum código de verificação encontrado',
+      );
     }
     if (user.verificationCodeExpiresAt < new Date()) {
-      throw new UnauthorizedException('Este código expirou. Peça um novo código.');
+      throw new UnauthorizedException(
+        'Este código expirou. Peça um novo código.',
+      );
     }
     const isCodeValid = await bcrypt.compare(dto.code, user.verificationCode);
     if (!isCodeValid) {
@@ -108,6 +114,61 @@ export class AuthService {
 
     const tokens = await this.issueTokens(user.id, user.email);
     return { message: 'Login realizado com sucesso', ...tokens };
+  }
+
+  async forgotPassword(dto: ForgotPasswordDto) {
+    const user = await this.userService.user({ email: dto.email });
+    if (user) {
+      const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
+      const hashedCode = await bcrypt.hash(code, 10);
+
+      await this.mailService.sendPasswordResetCode(user.email, code);
+
+      await this.userService.updateUser({
+        where: { id: user.id },
+        data: {
+          passwordResetCode: hashedCode,
+          passwordResetCodeExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
+        },
+      });
+    }
+
+    return {
+      message:
+        'Se o e-mail estiver cadastrado, um código de redefinição de senha foi enviado.',
+    };
+  }
+
+  async resetPassword(dto: ResetPasswordDto) {
+    const invalidCodeMessage = 'Código de redefinição inválido ou expirado';
+
+    const user = await this.userService.user({ email: dto.email });
+    if (
+      !user ||
+      !user.passwordResetCode ||
+      !user.passwordResetCodeExpiresAt ||
+      user.passwordResetCodeExpiresAt < new Date()
+    ) {
+      throw new UnauthorizedException(invalidCodeMessage);
+    }
+
+    const isCodeValid = await bcrypt.compare(dto.code, user.passwordResetCode);
+    if (!isCodeValid) {
+      throw new UnauthorizedException(invalidCodeMessage);
+    }
+
+    const hashedPassword = await bcrypt.hash(dto.newPassword, 10);
+    await this.userService.updateUser({
+      where: { id: user.id },
+      data: {
+        password: hashedPassword,
+        passwordResetCode: null,
+        passwordResetCodeExpiresAt: null,
+      },
+    });
+    return {
+      message: 'Senha redefinida com sucesso.',
+    };
   }
 
   async refresh(userId: string, refreshToken: string) {

@@ -19,9 +19,11 @@ model User {
   name                String?
   password            String
   hashedRefreshToken  String?
-  isEmailVerified Boolean @default(false)
-  verificationCode String?
+  isEmailVerified     Boolean @default(false)
+  verificationCode    String?
   verificationCodeExpiresAt DateTime?
+  passwordResetCode   String?
+  passwordResetCodeExpiresAt DateTime?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 }

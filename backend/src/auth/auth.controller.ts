@@ -8,6 +8,8 @@ import { LoginDto } from './dto/login.dto.js';
 import { JwtRefreshAuthGuard } from './guards/jwt-refresh-auth.guard.js';
 import { VerifyEmailDto } from './dto/verify-email.dto.js';
 import { ResendCodeDto } from './dto/resend-code.dto.js';
+import { ForgotPasswordDto } from './dto/forgot-password.dto.js';
+import { ResetPasswordDto } from './dto/reset-password.dto.js';
 
 const REFRESH_COOKIE = 'refreshToken';
 const REFRESH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
@@ -42,6 +44,18 @@ export class AuthController {
   @Public()
   resendCode(@Body() dto: ResendCodeDto) {
     return this.authService.resendCode(dto);
+  }
+
+  @Post('forgot-password')
+  @Public()
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto);
+  }
+
+  @Post('reset-password')
+  @Public()
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto);
   }
 
   @Post('login')
