@@ -6,12 +6,10 @@ import {
   NotFoundException,
   Param,
   Patch,
-  Post,
   Query,
 } from '@nestjs/common';
 import { UserService } from './user.service.js';
 import { Prisma, User } from '../generated/prisma/client.js';
-import { UserModel } from '../generated/prisma/models.js';
 
 @Controller('user')
 export class UserController {
