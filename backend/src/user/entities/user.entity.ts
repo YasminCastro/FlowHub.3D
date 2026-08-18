@@ -2,7 +2,9 @@ import { Exclude } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { User } from '../../generated/prisma/client.js';
 
-export class UserEntity implements Omit<User, 'password'> {
+export class UserEntity
+  implements Omit<User, 'password' | 'hashedRefreshToken'>
+{
   @ApiProperty()
   id!: number;
 

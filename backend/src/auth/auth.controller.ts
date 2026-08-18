@@ -1,9 +1,18 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { AuthService } from './auth.service.js';
 import { SignupDto } from './dto/signup.dto.js';
 import { Public } from './decorators/public.decorator.js';
 import { LoginDto } from './dto/login.dto.js';
+import { JwtRefreshAuthGuard } from './guards/jwt-refresh-auth.guard.js';
+
+const REFRESH_COOKIE = 'refreshToken';
+const REFRESH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
+
+interface RefreshRequest {
+  user: { userId: number; refreshToken: string };
+}
 
 @ApiTags('auth')
 @Controller('auth')
@@ -18,7 +27,48 @@ export class AuthController {
 
   @Post('login')
   @Public()
-  login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  async login(
+    @Body() dto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { refreshToken, ...body } = await this.authService.login(dto);
+    this.setRefreshCookie(res, refreshToken);
+    return body;
+  }
+
+  @Post('refresh')
+  @Public()
+  @UseGuards(JwtRefreshAuthGuard)
+  async refresh(
+    @Req() req: RefreshRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { refreshToken, ...body } = await this.authService.refresh(
+      req.user.userId,
+      req.user.refreshToken,
+    );
+    this.setRefreshCookie(res, refreshToken);
+    return body;
+  }
+
+  @Post('logout')
+  @Public()
+  @UseGuards(JwtRefreshAuthGuard)
+  async logout(
+    @Req() req: RefreshRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    await this.authService.logout(req.user.userId);
+    res.clearCookie(REFRESH_COOKIE);
+    return { message: 'Logout successful' };
+  }
+
+  private setRefreshCookie(res: Response, token: string) {
+    res.cookie(REFRESH_COOKIE, token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: REFRESH_COOKIE_MAX_AGE,
+    });
   }
 }
