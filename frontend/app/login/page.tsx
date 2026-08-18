@@ -110,7 +110,7 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <Button
+        {/* <Button
           type="button"
           variant="secondary"
           className="h-11 w-full justify-center gap-2.5"
@@ -125,7 +125,7 @@ export default function LoginPage() {
             ou
           </span>
           <hr className="fade-rule flex-1" />
-        </div>
+        </div> */}
 
         <Form {...form}>
           <form

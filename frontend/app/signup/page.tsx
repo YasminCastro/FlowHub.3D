@@ -149,6 +149,7 @@ export default function SignupPage() {
           </p>
         </div>
 
+        {/* 
         <Button
           type="button"
           variant="secondary"
@@ -164,7 +165,7 @@ export default function SignupPage() {
             ou
           </span>
           <hr className="fade-rule flex-1" />
-        </div>
+        </div> */}
 
         <Form {...form}>
           <form
