@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { Eye } from "lucide-react";
@@ -9,8 +11,33 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ApiError } from "@/lib/auth";
+import { useAuth } from "@/lib/auth-context";
 
 export default function LoginPage() {
+  const router = useRouter();
+  const { login } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await login(email, password);
+      router.push("/");
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : "Não foi possível entrar.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   return (
     <div className="grid flex-1 md:grid-cols-[1.05fr_1fr]">
       <div
@@ -88,13 +115,15 @@ export default function LoginPage() {
           <hr className="fade-rule flex-1" />
         </div>
 
-        <form className="flex flex-col gap-4">
+        <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <div className="grid gap-1.5">
             <Label htmlFor="lg-mail">E-mail</Label>
             <Input
               id="lg-mail"
               type="email"
-              placeholder="yasminsdcastro@gmail.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
             />
           </div>
           <div className="grid gap-1.5">
@@ -111,18 +140,21 @@ export default function LoginPage() {
               <Input
                 id="lg-pw"
                 type="password"
-                defaultValue="••••••••••"
                 className="pr-9"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
               />
               <Eye className="absolute top-1/2 right-2.5 size-3.75 -translate-y-1/2 cursor-pointer text-muted-foreground" />
             </div>
           </div>
-          <Label className="flex items-center gap-2.5 self-start text-muted-foreground">
-            <Checkbox defaultChecked />
-            Continuar conectada
-          </Label>
-          <Button type="submit" className="mt-1 h-11 w-full justify-center">
-            Entrar
+          {error && <p className="text-[12.5px] text-destructive">{error}</p>}
+          <Button
+            type="submit"
+            className="mt-1 h-11 w-full justify-center"
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? "Entrando..." : "Entrar"}
           </Button>
         </form>
 

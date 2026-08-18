@@ -69,7 +69,7 @@ export default function Home() {
       <section className="grid gap-6 sm:grid-cols-2">
         <Card>
           <CardHeader>
-            <p className="text-[10px] font-medium tracking-[0.1em] text-brand uppercase">
+            <p className="text-[10px] font-medium tracking-widest text-brand uppercase">
               Filamento
             </p>
             <CardTitle>Marrom PLA</CardTitle>
