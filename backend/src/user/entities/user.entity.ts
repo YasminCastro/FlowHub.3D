@@ -4,7 +4,7 @@ import { User } from '../../generated/prisma/client.js';
 
 export class UserEntity implements Omit<
   User,
-  'password' | 'hashedRefreshToken'
+  'password' | 'hashedRefreshToken' | 'passwordResetCode' | 'passwordResetCodeExpiresAt'
 > {
   @ApiProperty()
   id!: string;

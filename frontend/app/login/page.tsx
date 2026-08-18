@@ -155,7 +155,7 @@ export default function LoginPage() {
                   <div className="flex items-baseline gap-2.5">
                     <FormLabel>Senha</FormLabel>
                     <Link
-                      href="#"
+                      href="/forgot-password"
                       className="ml-auto text-[11.5px] text-brand hover:underline"
                     >
                       Esqueci a senha

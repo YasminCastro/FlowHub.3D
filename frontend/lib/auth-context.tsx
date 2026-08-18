@@ -8,10 +8,12 @@ import {
   useState,
 } from "react";
 import {
+  forgotPassword as forgotPasswordRequest,
   login as loginRequest,
   logout as logoutRequest,
   refreshAccessToken,
   resendCode as resendCodeRequest,
+  resetPassword as resetPasswordRequest,
   signup as signupRequest,
   verifyEmail as verifyEmailRequest,
 } from "@/lib/auth";
@@ -23,6 +25,12 @@ type AuthContextValue = {
   register: (email: string, password: string, name?: string) => Promise<void>;
   verifyEmail: (email: string, code: string) => Promise<void>;
   resendCode: (email: string) => Promise<void>;
+  forgotPassword: (email: string) => Promise<void>;
+  resetPassword: (
+    email: string,
+    code: string,
+    newPassword: string,
+  ) => Promise<void>;
   logout: () => Promise<void>;
 };
 
@@ -59,6 +67,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await resendCodeRequest(email);
   }, []);
 
+  const forgotPassword = useCallback(async (email: string) => {
+    await forgotPasswordRequest(email);
+  }, []);
+
+  const resetPassword = useCallback(
+    async (email: string, code: string, newPassword: string) => {
+      await resetPasswordRequest(email, code, newPassword);
+    },
+    [],
+  );
+
   const logout = useCallback(async () => {
     await logoutRequest();
     setAccessTokenState(null);
@@ -73,6 +92,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         register,
         verifyEmail,
         resendCode,
+        forgotPassword,
+        resetPassword,
         logout,
       }}
     >
