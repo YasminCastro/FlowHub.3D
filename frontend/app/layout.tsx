@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 const inter = Inter({
   variable: "--font-body",
@@ -27,7 +28,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col">
         <AuthProvider>
-          <main className="flex flex-1 flex-col">{children}</main>
+          <TooltipProvider>
+            <main className="flex flex-1 flex-col">{children}</main>
+          </TooltipProvider>
         </AuthProvider>
       </body>
     </html>

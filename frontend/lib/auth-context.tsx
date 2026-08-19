@@ -5,9 +5,11 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
 } from "react";
 import {
+  decodeAccessToken,
   forgotPassword as forgotPasswordRequest,
   login as loginRequest,
   logout as logoutRequest,
@@ -20,6 +22,7 @@ import {
 
 type AuthContextValue = {
   accessToken: string | null;
+  user: { email: string; name: string | null } | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name?: string) => Promise<void>;
@@ -39,6 +42,12 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [accessToken, setAccessTokenState] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  const user = useMemo(() => {
+    if (!accessToken) return null;
+    const payload = decodeAccessToken(accessToken);
+    return payload ? { email: payload.email, name: payload.name } : null;
+  }, [accessToken]);
 
   useEffect(() => {
     refreshAccessToken()
@@ -87,6 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     <AuthContext.Provider
       value={{
         accessToken,
+        user,
         isLoading,
         login,
         register,

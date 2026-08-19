@@ -4,6 +4,8 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/lib/auth-context";
+import { AppSidebar } from "@/components/dashboard/app-sidebar";
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 
 export default function DashboardLayout({
   children,
@@ -23,5 +25,15 @@ export default function DashboardLayout({
     return null;
   }
 
-  return <>{children}</>;
+  return (
+    <SidebarProvider>
+      <AppSidebar />
+      <SidebarInset>
+        <header className="flex h-12 items-center gap-2 border-b px-3">
+          <SidebarTrigger />
+        </header>
+        <div className="flex flex-1 flex-col p-4">{children}</div>
+      </SidebarInset>
+    </SidebarProvider>
+  );
 }

@@ -15,6 +15,19 @@ export function setAccessToken(token: string | null) {
   accessToken = token;
 }
 
+// Decodes the JWT payload for display purposes only (e.g. showing the
+// user's email in the UI). Never trust this client-side for authorization —
+// the backend is the source of truth for token validity.
+export function decodeAccessToken(token: string) {
+  try {
+    const payload = token.split(".")[1];
+    const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+    return json as { sub: string; email: string; name: string | null };
+  } catch {
+    return null;
+  }
+}
+
 async function parseResponse(res: Response) {
   const data = await res.json().catch(() => null);
 

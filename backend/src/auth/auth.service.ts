@@ -75,7 +75,7 @@ export class AuthService {
       },
     });
 
-    const tokens = await this.issueTokens(user.id, user.email);
+    const tokens = await this.issueTokens(user.id, user.email, user.name);
 
     return { message: 'E-mail verificado com sucesso', ...tokens };
   }
@@ -112,7 +112,7 @@ export class AuthService {
       throw new UnauthorizedException('E-mail não verificado');
     }
 
-    const tokens = await this.issueTokens(user.id, user.email);
+    const tokens = await this.issueTokens(user.id, user.email, user.name);
     return { message: 'Login realizado com sucesso', ...tokens };
   }
 
@@ -182,7 +182,7 @@ export class AuthService {
       throw new UnauthorizedException();
     }
 
-    return this.issueTokens(user.id, user.email);
+    return this.issueTokens(user.id, user.email, user.name);
   }
 
   async logout(userId: string) {
@@ -192,8 +192,12 @@ export class AuthService {
     });
   }
 
-  private async issueTokens(userId: string, email: string) {
-    const payload = { sub: userId, email };
+  private async issueTokens(
+    userId: string,
+    email: string,
+    name: string | null,
+  ) {
+    const payload = { sub: userId, email, name };
 
     const accessToken = this.signToken(
       payload,
@@ -218,7 +222,7 @@ export class AuthService {
   }
 
   private signToken(
-    payload: { sub: string; email: string },
+    payload: { sub: string; email: string; name: string | null },
     secretKey: 'JWT_SECRET' | 'JWT_REFRESH_SECRET',
     expiresInKey: 'JWT_EXPIRES_IN' | 'JWT_REFRESH_EXPIRES_IN',
     fallbackExpiresIn: `${number}${'s' | 'm' | 'h' | 'd'}`,
