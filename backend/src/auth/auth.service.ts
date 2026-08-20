@@ -16,6 +16,7 @@ import { VerifyEmailDto } from './dto/verify-email.dto.js';
 import { ResendCodeDto } from './dto/resend-code.dto.js';
 import { ForgotPasswordDto } from './dto/forgot-password.dto.js';
 import { ResetPasswordDto } from './dto/reset-password.dto.js';
+import { ChangePasswordDto } from './dto/change-password.dto.js';
 
 @Injectable()
 export class AuthService {
@@ -166,6 +167,35 @@ export class AuthService {
         passwordResetCodeExpiresAt: null,
       },
     });
+    return {
+      message: 'Senha redefinida com sucesso.',
+    };
+  }
+
+  async changePassword(dto: ChangePasswordDto, userId: string) {
+    const user = await this.userService.user({ id: userId });
+    if (!user) {
+      throw new UnauthorizedException('Usuário não encontrado');
+    }
+    const isCurrentPasswordValid = await bcrypt.compare(
+      dto.currentPassword,
+      user.password,
+    );
+
+    if (!isCurrentPasswordValid) {
+      throw new UnauthorizedException('Senha atual inválida');
+    }
+
+    const hashedPassword = await bcrypt.hash(dto.newPassword, 10);
+    await this.userService.updateUser({
+      where: { id: userId },
+      data: {
+        password: hashedPassword,
+        passwordResetCode: null,
+        passwordResetCodeExpiresAt: null,
+      },
+    });
+
     return {
       message: 'Senha redefinida com sucesso.',
     };

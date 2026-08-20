@@ -52,6 +52,16 @@ export async function resetPassword(
   })) as { message: string };
 }
 
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string,
+) {
+  return (await apiFetch("/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify({ currentPassword, newPassword }),
+  })) as { message: string };
+}
+
 export async function refreshAccessToken() {
   const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/refresh`, {
     method: "POST",

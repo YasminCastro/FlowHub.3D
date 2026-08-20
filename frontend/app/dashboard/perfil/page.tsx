@@ -20,7 +20,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useEffect, useMemo, useState } from "react";
 import { useWatch } from "react-hook-form";
-import { ApiError } from "@/lib/api/auth";
+import { ApiError, changePassword } from "@/lib/api/auth";
 import { useAuth } from "@/contexts/auth-context";
 import { updateUser } from "@/lib/api/user";
 import { Separator } from "@/components/ui/separator";
@@ -87,10 +87,11 @@ export default function PerfilPage() {
   );
   const isChangingPassword = passwordForm.formState.isSubmitting;
 
-  async function onSubmitPassword(values: PasswordValues) {
+  async function onSubmitChangePassword(values: PasswordValues) {
     setPasswordError(null);
     try {
-      // await changePassword(values.currentPassword, values.newPassword);
+      await changePassword(values.currentPassword, values.newPassword);
+      passwordForm.reset();
     } catch (err) {
       setPasswordError(
         err instanceof ApiError
@@ -192,7 +193,7 @@ export default function PerfilPage() {
         <Form {...passwordForm}>
           <form
             className="flex flex-col gap-4"
-            onSubmit={passwordForm.handleSubmit(onSubmitPassword)}
+            onSubmit={passwordForm.handleSubmit(onSubmitChangePassword)}
           >
             <div className="grid grid-cols-2 gap-4 items-start">
               <FormField

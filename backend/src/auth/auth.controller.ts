@@ -10,6 +10,8 @@ import { VerifyEmailDto } from './dto/verify-email.dto.js';
 import { ResendCodeDto } from './dto/resend-code.dto.js';
 import { ForgotPasswordDto } from './dto/forgot-password.dto.js';
 import { ResetPasswordDto } from './dto/reset-password.dto.js';
+import { ChangePasswordDto } from './dto/change-password.dto.js';
+import { CurrentUser } from './decorators/current-user.decorator.js';
 
 const REFRESH_COOKIE = 'refreshToken';
 const REFRESH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
@@ -56,6 +58,14 @@ export class AuthController {
   @Public()
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto);
+  }
+
+  @Post('change-password')
+  changePassword(
+    @Body() dto: ChangePasswordDto,
+    @CurrentUser('userId') currentUserId: string,
+  ) {
+    return this.authService.changePassword(dto, currentUserId);
   }
 
   @Post('login')
