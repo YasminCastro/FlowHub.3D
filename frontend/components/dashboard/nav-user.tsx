@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   ArrowUpRightIcon,
   ChevronsUpDownIcon,
@@ -9,7 +9,8 @@ import {
   UserIcon,
 } from "lucide-react";
 
-import { useAuth } from "@/lib/auth-context";
+import { useAuth } from "@/contexts/auth-context";
+import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -28,6 +29,7 @@ import {
 export function NavUser() {
   const { isMobile } = useSidebar();
   const router = useRouter();
+  const pathname = usePathname();
   const { user, logout } = useAuth();
 
   if (!user) {
@@ -36,6 +38,7 @@ export function NavUser() {
 
   const displayName = user.name ?? user.email;
   const initials = displayName.slice(0, 1).toUpperCase();
+  const isActive = pathname.startsWith("/dashboard/perfil");
 
   return (
     <SidebarMenu>
@@ -45,7 +48,10 @@ export function NavUser() {
             render={
               <SidebarMenuButton
                 size="lg"
-                className="rounded-lg border-l-2 border-brand bg-sidebar-accent/60 pl-2.5 data-popup-open:bg-sidebar-accent data-popup-open:text-sidebar-accent-foreground"
+                className={cn(
+                  "rounded-lg pl-2.5 data-popup-open:bg-sidebar-accent data-popup-open:text-sidebar-accent-foreground",
+                  isActive && "border-l-2 border-brand bg-sidebar-accent/60",
+                )}
               />
             }
           >
@@ -64,7 +70,7 @@ export function NavUser() {
           </DropdownMenuTrigger>
           <DropdownMenuContent
             className="min-w-64 rounded-xl p-2"
-            side={isMobile ? "bottom" : "right"}
+            side={isMobile ? "bottom" : "top"}
             align="end"
             sideOffset={4}
           >
@@ -82,18 +88,21 @@ export function NavUser() {
               </div>
             </div>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem
+              className="cursor-pointer"
+              onClick={() => router.push("/dashboard/perfil")}
+            >
               <UserIcon />
-              Perfil e conta
-              <ArrowUpRightIcon className="ml-auto size-3.5 text-muted-foreground" />
+              Perfil
             </DropdownMenuItem>
-            <DropdownMenuItem>
+            {/* <DropdownMenuItem className="cursor-pointer">
               <CircleHelpIcon />
               Ajuda
-            </DropdownMenuItem>
+            </DropdownMenuItem> */}
             <DropdownMenuSeparator />
             <DropdownMenuItem
               variant="destructive"
+              className="cursor-pointer"
               onClick={async () => {
                 await logout();
                 router.push("/login");

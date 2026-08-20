@@ -18,11 +18,11 @@ import {
   resetPassword as resetPasswordRequest,
   signup as signupRequest,
   verifyEmail as verifyEmailRequest,
-} from "@/lib/auth";
+} from "@/lib/api/auth";
 
 type AuthContextValue = {
   accessToken: string | null;
-  user: { email: string; name: string | null } | null;
+  user: { id: string; email: string; name: string | null } | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name?: string) => Promise<void>;
@@ -35,6 +35,7 @@ type AuthContextValue = {
     newPassword: string,
   ) => Promise<void>;
   logout: () => Promise<void>;
+  refreshSession: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -46,7 +47,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const user = useMemo(() => {
     if (!accessToken) return null;
     const payload = decodeAccessToken(accessToken);
-    return payload ? { email: payload.email, name: payload.name } : null;
+    return payload
+      ? { id: payload.sub, email: payload.email, name: payload.name }
+      : null;
   }, [accessToken]);
 
   useEffect(() => {
@@ -92,6 +95,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAccessTokenState(null);
   }, []);
 
+  const refreshSession = useCallback(async () => {
+    const newToken = await refreshAccessToken();
+    setAccessTokenState(newToken);
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
@@ -105,6 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         forgotPassword,
         resetPassword,
         logout,
+        refreshSession,
       }}
     >
       {children}

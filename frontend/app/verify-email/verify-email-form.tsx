@@ -9,8 +9,8 @@ import { Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Logo } from "@/components/logo";
-import { ApiError } from "@/lib/auth";
-import { useAuth } from "@/lib/auth-context";
+import { ApiError } from "@/lib/api/auth";
+import { useAuth } from "@/contexts/auth-context";
 
 const CODE_LENGTH = 6;
 const RESEND_COOLDOWN_SECONDS = 45;
@@ -72,7 +72,10 @@ export function VerifyEmailForm() {
     inputsRef.current[nextIndex]?.focus();
   }
 
-  function handleKeyDown(index: number, e: React.KeyboardEvent<HTMLInputElement>) {
+  function handleKeyDown(
+    index: number,
+    e: React.KeyboardEvent<HTMLInputElement>,
+  ) {
     if (e.key === "Backspace" && !digits[index] && index > 0) {
       inputsRef.current[index - 1]?.focus();
     }
@@ -92,7 +95,9 @@ export function VerifyEmailForm() {
       router.push("/");
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.message : "Não foi possível ativar a conta.",
+        err instanceof ApiError
+          ? err.message
+          : "Não foi possível ativar a conta.",
       );
       setDigits(Array(CODE_LENGTH).fill(""));
       inputsRef.current[0]?.focus();
@@ -124,7 +129,7 @@ export function VerifyEmailForm() {
 
   return (
     <div className="flex flex-1 items-center justify-center bg-card p-8">
-      <div className="w-full max-w-[420px]">
+      <div className="w-full max-w-105">
         <div className="mb-8">
           <Logo />
         </div>
@@ -148,12 +153,20 @@ export function VerifyEmailForm() {
           </Link>
         </p>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
+        <form
+          onSubmit={handleSubmit}
+          className="flex flex-col gap-5"
+          noValidate
+        >
           <div className="flex flex-col gap-2">
             <label htmlFor="code-0" className="text-xs text-muted-foreground">
               Código
             </label>
-            <div className="flex gap-2.25" role="group" aria-label="Código de verificação">
+            <div
+              className="flex gap-2.25"
+              role="group"
+              aria-label="Código de verificação"
+            >
               {digits.map((digit, i) => (
                 <Input
                   key={i}
@@ -205,8 +218,8 @@ export function VerifyEmailForm() {
               </button>
             )}
             <span className="ml-auto flex items-center gap-1.5 text-[11.5px] text-muted-foreground/70">
-              <Clock aria-hidden="true" className="size-3.25" />
-              o código vale 10 min
+              <Clock aria-hidden="true" className="size-3.25" />o código vale 10
+              min
             </span>
           </div>
         </form>

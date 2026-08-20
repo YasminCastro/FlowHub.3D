@@ -20,8 +20,8 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Logo } from "@/components/logo";
-import { ApiError } from "@/lib/auth";
-import { useAuth } from "@/lib/auth-context";
+import { ApiError } from "@/lib/api/auth";
+import { useAuth } from "@/contexts/auth-context";
 
 const CODE_LENGTH = 6;
 const RESEND_COOLDOWN_SECONDS = 45;

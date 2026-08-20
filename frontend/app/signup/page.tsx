@@ -21,19 +21,9 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Logo } from "@/components/logo";
-import { ApiError } from "@/lib/auth";
-import { useAuth } from "@/lib/auth-context";
-
-function passwordStrength(password: string) {
-  let score = 0;
-  if (password.length >= 8) score++;
-  if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score++;
-  if (/\d/.test(password)) score++;
-  if (/[^A-Za-z0-9]/.test(password)) score++;
-
-  const label = ["Fraca", "Fraca", "Razoável", "Boa", "Forte"][score];
-  return { score, label };
-}
+import { ApiError } from "@/lib/api/auth";
+import { useAuth } from "@/contexts/auth-context";
+import { passwordStrength } from "@/lib/password";
 
 const signupSchema = z
   .object({
