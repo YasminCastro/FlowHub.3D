@@ -54,7 +54,7 @@ const deleteAccountSchema = z.object({
 
 type DeleteAccountValues = z.infer<typeof deleteAccountSchema>;
 
-export default function PerfilPage() {
+export default function CategoriesPage() {
   const router = useRouter();
   const { user, logout, refreshSession } = useAuth();
   const [error, setError] = useState<string | null>(null);
@@ -148,7 +148,7 @@ export default function PerfilPage() {
   return (
     <div className="p-8 flex flex-col gap-8">
       <div>
-        <h1 className="text-4xl font-bold">Perfil</h1>
+        <h1 className="text-4xl font-bold">Categorias</h1>
         <p className="text-muted-foreground text-sm">
           Seus dados de acesso. Nada aqui muda seus registros de impressão.
         </p>

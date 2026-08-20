@@ -9,9 +9,15 @@ import { AuthModule } from './auth/auth.module.js';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard.js';
 import { APP_GUARD } from '@nestjs/core';
 import { MailModule } from './mail/mail.module.js';
+import { CategoryModule } from './category/category.module.js';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), AuthModule, MailModule],
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    AuthModule,
+    MailModule,
+    CategoryModule,
+  ],
   controllers: [AppController, UserController],
   providers: [
     AppService,

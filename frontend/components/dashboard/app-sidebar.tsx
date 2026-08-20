@@ -86,7 +86,7 @@ const navGroups = [
   {
     label: "CONFIGURAÇÕES",
     items: [
-      { title: "Categorias", url: "/dashboard/categorias", icon: TagIcon },
+      { title: "Categorias", url: "/dashboard/categories", icon: TagIcon },
       { title: "Marcas", url: "/dashboard/marcas", icon: PackageIcon },
       {
         title: "Itens Extras",

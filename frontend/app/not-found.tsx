@@ -22,10 +22,18 @@ export default function NotFound() {
           precise entrar primeiro.
         </p>
         <div className="flex items-center gap-4">
-          <Button render={<Link href="/login" />} nativeButton={false} size="lg" className="px-5">
+          <Button
+            render={<Link href="/login" />}
+            nativeButton={false}
+            size="lg"
+            className="px-5"
+          >
             Entrar
           </Button>
-          <Link href="/" className="text-sm text-brand hover:underline">
+          <Link
+            href="/dashboard"
+            className="text-sm text-brand hover:underline"
+          >
             Ir para o início
           </Link>
         </div>
