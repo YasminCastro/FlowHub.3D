@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { jest } from '@jest/globals';
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { UserController } from './user.controller.js';
 import { UserService } from './user.service.js';
 import { User } from '../generated/prisma/client.js';
@@ -89,7 +89,9 @@ describe('UserController', () => {
       const updatedUser = { ...mockUser, name: 'Updated Name' };
       userService.updateUser.mockResolvedValueOnce(updatedUser);
 
-      const result = await controller.update('1', { name: 'Updated Name' });
+      const result = await controller.update('1', '1', {
+        name: 'Updated Name',
+      });
 
       expect(result).toEqual(updatedUser);
       expect(userService.updateUser).toHaveBeenCalledWith({
@@ -97,16 +99,28 @@ describe('UserController', () => {
         data: { name: 'Updated Name' },
       });
     });
+
+    it('should throw ForbiddenException when updating another user', () => {
+      expect(() =>
+        controller.update('1', '2', { name: 'Updated Name' }),
+      ).toThrow(ForbiddenException);
+      expect(userService.updateUser).not.toHaveBeenCalled();
+    });
   });
 
   describe('remove', () => {
     it('should delete and return the user', async () => {
       userService.deleteUser.mockResolvedValueOnce(mockUser);
 
-      const result = await controller.remove('1');
+      const result = await controller.remove('1', '1');
 
       expect(result).toEqual(mockUser);
       expect(userService.deleteUser).toHaveBeenCalledWith({ id: '1' });
+    });
+
+    it('should throw ForbiddenException when deleting another user', () => {
+      expect(() => controller.remove('1', '2')).toThrow(ForbiddenException);
+      expect(userService.deleteUser).not.toHaveBeenCalled();
     });
   });
 });

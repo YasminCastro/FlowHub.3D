@@ -3,6 +3,7 @@ import {
   ClassSerializerInterceptor,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   NotFoundException,
   Param,
@@ -14,6 +15,7 @@ import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { UserService } from './user.service.js';
 import { Prisma, User } from '../generated/prisma/client.js';
 import { UserEntity } from './entities/user.entity.js';
+import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 
 @ApiTags('user')
 @ApiBearerAuth()
@@ -47,14 +49,24 @@ export class UserController {
 
   @Patch(':id')
   update(
+    @CurrentUser('userId') currentUserId: string,
     @Param('id') id: string,
     @Body() data: Prisma.UserUpdateInput,
   ): Promise<User> {
+    if (id !== currentUserId) {
+      throw new ForbiddenException('You can only update your own account.');
+    }
     return this.userService.updateUser({ where: { id }, data });
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string): Promise<User> {
+  remove(
+    @CurrentUser('userId') currentUserId: string,
+    @Param('id') id: string,
+  ): Promise<User> {
+    if (id !== currentUserId) {
+      throw new ForbiddenException('You can only delete your own account.');
+    }
     return this.userService.deleteUser({ id });
   }
 }
