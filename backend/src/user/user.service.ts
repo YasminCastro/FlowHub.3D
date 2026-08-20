@@ -1,4 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Prisma, User } from '../generated/prisma/client.js';
 
@@ -52,5 +57,19 @@ export class UserService {
     return this.prisma.user.delete({
       where,
     });
+  }
+
+  async deleteUserWithPassword(id: string, password: string): Promise<User> {
+    const user = await this.user({ id });
+    if (!user) {
+      throw new NotFoundException(`User ${id} not found`);
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Senha incorreta.');
+    }
+
+    return this.deleteUser({ id });
   }
 }

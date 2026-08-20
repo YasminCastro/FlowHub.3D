@@ -16,6 +16,7 @@ import { UserService } from './user.service.js';
 import { Prisma, User } from '../generated/prisma/client.js';
 import { UserEntity } from './entities/user.entity.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
+import { DeleteAccountDto } from './dto/delete-account.dto.js';
 
 @ApiTags('user')
 @ApiBearerAuth()
@@ -63,10 +64,11 @@ export class UserController {
   remove(
     @CurrentUser('userId') currentUserId: string,
     @Param('id') id: string,
+    @Body() dto: DeleteAccountDto,
   ): Promise<User> {
     if (id !== currentUserId) {
       throw new ForbiddenException('You can only delete your own account.');
     }
-    return this.userService.deleteUser({ id });
+    return this.userService.deleteUserWithPassword(id, dto.password);
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Upload, Camera, Eye, EyeOff } from "lucide-react";
+import { Upload, Camera, Eye, EyeOff, TriangleAlert } from "lucide-react";
 import { FcGoogle } from "react-icons/fc";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -17,12 +17,21 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useEffect, useMemo, useState } from "react";
 import { useWatch } from "react-hook-form";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { ApiError, changePassword } from "@/lib/api/auth";
 import { useAuth } from "@/contexts/auth-context";
-import { updateUser } from "@/lib/api/user";
+import { deleteUser, updateUser } from "@/lib/api/user";
 import { Separator } from "@/components/ui/separator";
 import { passwordStrength } from "@/lib/password";
 
@@ -39,12 +48,20 @@ const passwordSchema = z.object({
 
 type PasswordValues = z.infer<typeof passwordSchema>;
 
+const deleteAccountSchema = z.object({
+  password: z.string().min(1, "Informe sua senha."),
+});
+
+type DeleteAccountValues = z.infer<typeof deleteAccountSchema>;
+
 export default function PerfilPage() {
-  const { user, refreshSession } = useAuth();
+  const router = useRouter();
+  const { user, logout, refreshSession } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   const nameForm = useForm<NameValues>({
     resolver: zodResolver(nameSchema),
@@ -99,6 +116,33 @@ export default function PerfilPage() {
           : "Não foi possível alterar a senha.",
       );
     }
+  }
+
+  const deleteAccountForm = useForm<DeleteAccountValues>({
+    resolver: zodResolver(deleteAccountSchema),
+    defaultValues: { password: "" },
+  });
+  const isDeletingAccount = deleteAccountForm.formState.isSubmitting;
+
+  async function onSubmitDeleteAccount(values: DeleteAccountValues) {
+    if (!user) return;
+    try {
+      await deleteUser(user.id, values.password);
+      await logout();
+      router.push("/login");
+    } catch (err) {
+      deleteAccountForm.setError("password", {
+        message:
+          err instanceof ApiError
+            ? err.message
+            : "Não foi possível excluir a conta.",
+      });
+    }
+  }
+
+  function onDeleteDialogOpenChange(open: boolean) {
+    setIsDeleteDialogOpen(open);
+    if (!open) deleteAccountForm.reset();
   }
 
   return (
@@ -326,11 +370,80 @@ export default function PerfilPage() {
             type="button"
             variant="link"
             className="h-auto px-0 text-destructive"
+            onClick={() => setIsDeleteDialogOpen(true)}
           >
             Excluir minha conta
           </Button>
         </div>
       </div>
+
+      <Dialog open={isDeleteDialogOpen} onOpenChange={onDeleteDialogOpenChange}>
+        <DialogContent className="ring-destructive/30">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <TriangleAlert className="size-4.5" aria-hidden="true" />
+              Excluir a sua conta
+            </DialogTitle>
+            <DialogDescription>
+              Esta ação não pode ser desfeita. Confirme com a sua senha para
+              continuar.
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...deleteAccountForm}>
+            <form
+              className="flex flex-col gap-3"
+              onSubmit={deleteAccountForm.handleSubmit(
+                onSubmitDeleteAccount,
+              )}
+            >
+              <FormField
+                control={deleteAccountForm.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Senha</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="password"
+                        autoComplete="current-password"
+                        autoFocus
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="flex items-center justify-between pt-1">
+                <Link
+                  href="/forgot-password"
+                  className="text-[12.5px] text-muted-foreground hover:text-foreground hover:underline"
+                >
+                  Esqueci a senha
+                </Link>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setIsDeleteDialogOpen(false)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    className="border-destructive text-destructive hover:bg-destructive/10"
+                    disabled={isDeletingAccount}
+                    aria-busy={isDeletingAccount}
+                  >
+                    {isDeletingAccount ? "Excluindo..." : "Excluir conta"}
+                  </Button>
+                </div>
+              </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { UserService } from '../user/user.service.js';
 import { SignupDto } from './dto/signup.dto.js';
 
 import bcrypt from 'bcrypt';
+import { Prisma } from '../generated/prisma/client.js';
 import { randomInt } from 'node:crypto';
 import { LoginDto } from './dto/login.dto.js';
 import { JwtService } from '@nestjs/jwt';
@@ -216,10 +217,19 @@ export class AuthService {
   }
 
   async logout(userId: string) {
-    await this.userService.updateUser({
-      where: { id: userId },
-      data: { hashedRefreshToken: null },
-    });
+    try {
+      await this.userService.updateUser({
+        where: { id: userId },
+        data: { hashedRefreshToken: null },
+      });
+    } catch (err) {
+      const isMissingRecord =
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2025';
+      if (!isMissingRecord) {
+        throw err;
+      }
+    }
   }
 
   private async issueTokens(

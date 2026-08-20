@@ -92,7 +92,7 @@ export function VerifyEmailForm() {
     setIsSubmitting(true);
     try {
       await verifyEmail(email, code);
-      router.push("/");
+      router.push("/dashboard");
     } catch (err) {
       setError(
         err instanceof ApiError

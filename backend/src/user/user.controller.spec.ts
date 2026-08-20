@@ -29,6 +29,7 @@ describe('UserController', () => {
       createUser: jest.fn(),
       updateUser: jest.fn(),
       deleteUser: jest.fn(),
+      deleteUserWithPassword: jest.fn(),
     } as unknown as MockUserService;
 
     const module: TestingModule = await Test.createTestingModule({
@@ -110,17 +111,24 @@ describe('UserController', () => {
 
   describe('remove', () => {
     it('should delete and return the user', async () => {
-      userService.deleteUser.mockResolvedValueOnce(mockUser);
+      userService.deleteUserWithPassword.mockResolvedValueOnce(mockUser);
 
-      const result = await controller.remove('1', '1');
+      const result = await controller.remove('1', '1', {
+        password: 'correct-password',
+      });
 
       expect(result).toEqual(mockUser);
-      expect(userService.deleteUser).toHaveBeenCalledWith({ id: '1' });
+      expect(userService.deleteUserWithPassword).toHaveBeenCalledWith(
+        '1',
+        'correct-password',
+      );
     });
 
     it('should throw ForbiddenException when deleting another user', () => {
-      expect(() => controller.remove('1', '2')).toThrow(ForbiddenException);
-      expect(userService.deleteUser).not.toHaveBeenCalled();
+      expect(() =>
+        controller.remove('1', '2', { password: 'whatever' }),
+      ).toThrow(ForbiddenException);
+      expect(userService.deleteUserWithPassword).not.toHaveBeenCalled();
     });
   });
 });
