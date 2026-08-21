@@ -3,22 +3,38 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException } from '@nestjs/common';
 import { PrinterService } from './printer.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { PrinterDto } from './dto/printer.js';
+
+type AsyncMock = jest.Mock<() => Promise<any>>;
 
 describe('PrinterService', () => {
   let service: PrinterService;
   let prisma: {
     printer: {
-      findUnique: jest.Mock;
-      findMany: jest.Mock;
-      create: jest.Mock;
-      update: jest.Mock;
-      delete: jest.Mock;
+      findUnique: AsyncMock;
+      findMany: AsyncMock;
+      create: AsyncMock;
+      update: AsyncMock;
+      delete: AsyncMock;
     };
   };
 
   const userId = 'user-1';
   const printerId = 'printer-1';
-  const printerData = { name: 'Ender 3', userId };
+  const printerData: PrinterDto & { userId: string } = {
+    userId,
+    name: 'Ender 3',
+    brand: 'Creality',
+    nozzle: '0.4mm',
+    extrusionType: 'Direct Drive',
+    filamentsTypes: ['PLA'],
+    powerConsumptionW: 220,
+    energyCostPerKwh: 0.9,
+    maintenanceCostPerHour: 1,
+    purchasePrice: 1500,
+    purchaseDate: new Date(),
+    lastMaintenanceDate: new Date(),
+  };
 
   beforeEach(async () => {
     prisma = {
