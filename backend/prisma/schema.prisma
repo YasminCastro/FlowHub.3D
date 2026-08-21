@@ -28,6 +28,7 @@ model User {
   updatedAt           DateTime @updatedAt
 
   categories Category[]
+  printers Printer[]
 }
 
 
@@ -35,6 +36,28 @@ model Category {
   id        String   @id @default(uuid())
   name      String
   color     String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, name])
+}
+
+model Printer {
+  id        String   @id @default(uuid())
+  name      String
+  brand     String
+  nozzle    String?
+  extrusionType String?  
+  filamentsTypes  String[]  @default([])
+  powerConsumptionW      Float?
+  energyCostPerKwh       Float?
+  maintenanceCostPerHour Float?
+  purchasePrice          Float?
+  purchaseDate           DateTime?
+  lastMaintenanceDate       DateTime?
+  notes                 String?
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())

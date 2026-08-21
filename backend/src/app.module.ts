@@ -10,6 +10,7 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard.js';
 import { APP_GUARD } from '@nestjs/core';
 import { MailModule } from './mail/mail.module.js';
 import { CategoryModule } from './category/category.module.js';
+import { PrinterModule } from './printer/printer.module.js';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { CategoryModule } from './category/category.module.js';
     AuthModule,
     MailModule,
     CategoryModule,
+    PrinterModule,
   ],
   controllers: [AppController, UserController],
   providers: [

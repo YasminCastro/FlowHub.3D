@@ -62,7 +62,7 @@ const navGroups = [
     items: [
       {
         title: "Impressoras",
-        url: "/dashboard/impressoras",
+        url: "/dashboard/printers",
         icon: PrinterIcon,
       },
       { title: "Filamentos", url: "/dashboard/filamentos", icon: LayersIcon },
