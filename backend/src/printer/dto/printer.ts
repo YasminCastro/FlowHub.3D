@@ -1,3 +1,4 @@
+import { Type } from 'class-transformer';
 import {
   IsArray,
   IsDate,
@@ -43,10 +44,12 @@ export class PrinterDto {
   purchasePrice!: number;
 
   @IsOptional()
+  @Type(() => Date)
   @IsDate()
   purchaseDate!: Date;
 
   @IsOptional()
+  @Type(() => Date)
   @IsDate()
   lastMaintenanceDate!: Date;
 }
