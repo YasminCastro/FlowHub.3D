@@ -21,7 +21,7 @@ const CONFIG_TABS = [
 
 const EQUIPAMENT_TABS = [
   { title: "Impressoras", url: "/dashboard/printers" },
-  { title: "Filamentos", url: "/dashboard/filaments" },
+  { title: "Filamentos", url: "/dashboard/filamentos" },
 ];
 
 export function DashboardHeader() {

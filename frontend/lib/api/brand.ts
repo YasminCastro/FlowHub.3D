@@ -1,4 +1,5 @@
 import { apiFetch } from "./client";
+import { Filament, PricePerKg, getPricePerKg } from "./filament";
 
 export type PurchaseChannel =
   | "OWN_SITE"
@@ -168,6 +169,48 @@ export function getResearchedPrice(
   };
 }
 
+type FilamentPriceFields = Pick<
+  Filament,
+  "brandId" | "minPricePaid" | "maxPricePaid" | "spoolWeightGrams"
+>;
+
+// Preço por kg da marca. Com filamentos cadastrados ele sai dos rolos: a
+// faixa vai do menor ao maior preço por kg pago, e a média é a dos
+// filamentos. Sem nenhum, vale a faixa pesquisada (só em "Só pesquisei").
+export type BrandPrice = ResearchedPrice & {
+  source: "filaments" | "researched";
+  filamentCount: number;
+};
+
+export function getBrandPrice(
+  brand: Pick<
+    Brand,
+    "id" | "status" | "researchedMinPricePerKg" | "researchedMaxPricePerKg"
+  >,
+  filaments: FilamentPriceFields[],
+): BrandPrice | null {
+  const prices = filaments
+    .filter((filament) => filament.brandId === brand.id)
+    .map((filament) => getPricePerKg(filament))
+    .filter((price): price is PricePerKg => price !== null);
+
+  if (prices.length > 0) {
+    return {
+      min: Math.min(...prices.map((price) => price.min)),
+      max: Math.max(...prices.map((price) => price.max)),
+      average:
+        prices.reduce((sum, price) => sum + price.average, 0) / prices.length,
+      source: "filaments",
+      filamentCount: prices.length,
+    };
+  }
+
+  const researched = getResearchedPrice(brand);
+  return researched
+    ? { ...researched, source: "researched", filamentCount: 0 }
+    : null;
+}
+
 export function formatResearchedRange({ min, max }: ResearchedPrice) {
   const format = (value: number) =>
     value.toLocaleString("pt-BR", {
@@ -191,17 +234,10 @@ const COST_BENEFIT_TOLERANCE = 0.1;
 
 // Média do preço por kg das marcas que têm preço. Com menos de duas não há
 // com o que comparar, então não existe média.
-export function getAveragePricePerKg(
-  brands: Pick<
-    Brand,
-    "status" | "researchedMinPricePerKg" | "researchedMaxPricePerKg"
-  >[],
-) {
-  const prices = brands
-    .map((brand) => getResearchedPrice(brand)?.average)
-    .filter((price): price is number => price != null);
-  if (prices.length < 2) return null;
-  return prices.reduce((sum, price) => sum + price, 0) / prices.length;
+export function getAveragePricePerKg(prices: (number | null | undefined)[]) {
+  const valid = prices.filter((price): price is number => price != null);
+  if (valid.length < 2) return null;
+  return valid.reduce((sum, price) => sum + price, 0) / valid.length;
 }
 
 export function getCostBenefit(

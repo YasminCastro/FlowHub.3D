@@ -23,7 +23,9 @@ import { BrandNotes } from "@/components/brands/brand-notes";
 import {
   BrandStatusBadge,
   FilamentTypeTags,
+  formatFilamentCount,
 } from "@/components/brands/brand-row-preview";
+import { FilamentCard } from "@/components/filaments/filament-card";
 import {
   usePageHeaderAction,
   usePageHeaderBreadcrumb,
@@ -32,23 +34,24 @@ import { useBrand } from "@/hooks/use-brand";
 import { ApiError } from "@/lib/api/auth";
 import {
   Brand,
+  BrandPrice,
   COST_BENEFIT_LABELS,
   BrandUpdateInput,
   CostBenefit,
   PURCHASE_CHANNEL_LABELS,
-  ResearchedPrice,
   brandWebsiteHref,
   formatResearchedRange,
   getAveragePricePerKg,
+  getBrandPrice,
   getCostBenefit,
-  getResearchedPrice,
   listBrands,
   updateBrand,
 } from "@/lib/api/brand";
+import { Filament, formatRating, listFilaments } from "@/lib/api/filament";
 import { cn, formatBRL, formatDatePtBR } from "@/lib/utils";
 
-// Preço, nota e compras saem dos rolos, que ainda não existem no app. Até
-// lá, uma marca "Só pesquisei" mostra a faixa de preço da pesquisa.
+// Preço, nota e compras saem dos filamentos da marca. Sem nenhum, uma marca
+// "Só pesquisei" mostra a faixa de preço da pesquisa.
 const COST_BENEFIT_TEXT_STYLES: Record<CostBenefit, string> = {
   GOOD: "text-emerald-400",
   MODERATE: "text-amber-400",
@@ -64,12 +67,12 @@ function describeDistanceFromAverage(price: number, average: number) {
 }
 
 function buildCostBenefitStat(
-  researchedPrice: ResearchedPrice | null,
+  price: BrandPrice | null,
   costBenefit: CostBenefit | null,
   averagePricePerKg: number | null,
 ) {
   const label = "Custo-benefício";
-  if (!researchedPrice) {
+  if (!price) {
     return { label, value: "—", caption: "sem preço cadastrado" };
   }
   if (!costBenefit || averagePricePerKg == null) {
@@ -84,41 +87,69 @@ function buildCostBenefitStat(
     value: COST_BENEFIT_LABELS[costBenefit],
     valueClassName: COST_BENEFIT_TEXT_STYLES[costBenefit],
     caption: describeDistanceFromAverage(
-      researchedPrice.average,
+      price.average,
       averagePricePerKg,
     ),
   };
 }
 
 function buildPurchaseStats(
-  researchedPrice: ResearchedPrice | null,
+  price: BrandPrice | null,
   costBenefit: CostBenefit | null,
   averagePricePerKg: number | null,
+  brandFilaments: Filament[],
 ): {
   label: string;
   value: string;
   caption?: string;
   valueClassName?: string;
 }[] {
+  const fromFilaments = price?.source === "filaments";
+  const purchaseCount = brandFilaments.reduce(
+    (sum, filament) => sum + filament.purchaseCount,
+    0,
+  );
+  const ratings = brandFilaments
+    .map((filament) => filament.rating)
+    .filter((rating): rating is number => rating != null);
+  const averageRating = ratings.length
+    ? ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length
+    : null;
+  const lastPurchase = brandFilaments
+    .map((filament) => filament.lastPurchasedAt)
+    .filter((date): date is string => date != null)
+    .sort()
+    .at(-1);
+
   return [
-    researchedPrice
+    price
       ? {
           label: "Preço por kg",
-          value: formatBRL(researchedPrice.average),
-          caption: "média da pesquisa",
+          value: formatBRL(price.average),
+          caption: fromFilaments
+            ? `média de ${formatFilamentCount(price.filamentCount)}`
+            : "média da pesquisa",
         }
       : { label: "Preço por kg", value: "—", caption: "sem rolo cadastrado" },
-    buildCostBenefitStat(researchedPrice, costBenefit, averagePricePerKg),
-    researchedPrice
+    buildCostBenefitStat(price, costBenefit, averagePricePerKg),
+    price
       ? {
-          label: "Faixa pesquisada",
-          value: formatResearchedRange(researchedPrice),
-          caption: "R$ por kg",
+          label: fromFilaments ? "Faixa por kg" : "Faixa pesquisada",
+          value: formatResearchedRange(price),
+          caption: fromFilaments ? "R$ por kg, entre as compras" : "R$ por kg",
         }
-      : { label: "Faixa por rolo", value: "—" },
-    { label: "Rolos comprados", value: "0" },
-    { label: "Nota média", value: "—", caption: "sem uso" },
-    { label: "Última compra", value: "—" },
+      : { label: "Faixa por kg", value: "—" },
+    { label: "Rolos comprados", value: String(purchaseCount) },
+    averageRating != null
+      ? {
+          label: "Nota média",
+          value: formatRating(averageRating),
+          caption: `${ratings.length} ${ratings.length === 1 ? "avaliação" : "avaliações"}`,
+        }
+      : { label: "Nota média", value: "—", caption: "sem uso" },
+    lastPurchase
+      ? { label: "Última compra", value: formatDatePtBR(lastPurchase) }
+      : { label: "Última compra", value: "—" },
   ];
 }
 
@@ -130,13 +161,17 @@ export default function BrandDetailPage() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [activeBrands, setActiveBrands] = useState<Brand[] | null>(null);
+  const [filaments, setFilaments] = useState<Filament[]>([]);
 
-  // O custo é relativo à média das marcas ativas, então precisa da lista.
+  // O custo é relativo à média das marcas ativas, então precisa da lista; o
+  // preço de cada uma sai dos filamentos cadastrados.
   useEffect(() => {
     let ignore = false;
-    listBrands()
-      .then((brands) => {
-        if (!ignore) setActiveBrands(brands);
+    Promise.all([listBrands(), listFilaments()])
+      .then(([brands, allFilaments]) => {
+        if (ignore) return;
+        setActiveBrands(brands);
+        setFilaments(allFilaments);
       })
       .catch(() => {
         if (!ignore) setActiveBrands(null);
@@ -234,19 +269,21 @@ export default function BrandDetailPage() {
     );
   }
 
-  const researchedPrice = getResearchedPrice(brand);
+  const brandFilaments = filaments.filter(
+    (filament) => filament.brandId === brand.id,
+  );
+  const price = getBrandPrice(brand, filaments);
   // A versão da marca carregada aqui é a mais nova (pode ter acabado de ser
   // editada), então ela substitui a da lista no cálculo da média.
   const averagePricePerKg = activeBrands
-    ? getAveragePricePerKg([
-        ...activeBrands.filter((item) => item.id !== brand.id),
-        ...(brand.archivedAt ? [] : [brand]),
-      ])
+    ? getAveragePricePerKg(
+        [
+          ...activeBrands.filter((item) => item.id !== brand.id),
+          ...(brand.archivedAt ? [] : [brand]),
+        ].map((item) => getBrandPrice(item, filaments)?.average),
+      )
     : null;
-  const costBenefit = getCostBenefit(
-    researchedPrice?.average,
-    averagePricePerKg,
-  );
+  const costBenefit = getCostBenefit(price?.average, averagePricePerKg);
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-8 lg:flex-row">
@@ -312,9 +349,10 @@ export default function BrandDetailPage() {
 
         <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 xl:grid-cols-6">
           {buildPurchaseStats(
-            researchedPrice,
+            price,
             costBenefit,
             averagePricePerKg,
+            brandFilaments,
           ).map((stat) => (
             <div key={stat.label} className="flex flex-col gap-1">
               <span className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -339,16 +377,30 @@ export default function BrandDetailPage() {
             <span className="text-xs uppercase tracking-wide text-muted-foreground">
               Filamentos desta marca
             </span>
-            <span className="text-xs text-muted-foreground">0 rolos</span>
+            <span className="text-xs text-muted-foreground">
+              {formatFilamentCount(brandFilaments.length)}
+            </span>
           </div>
-          <div className="flex flex-col items-center gap-2 rounded-md border border-dashed border-border py-10 text-center text-muted-foreground">
-            <Layers className="size-6" aria-hidden="true" />
-            <p className="text-sm">Nenhum rolo cadastrado desta marca.</p>
-            <p className="max-w-sm text-[12.5px]">
-              Quando você cadastrar filamentos, cor, preço do rolo, preço por
-              kg e quanto sobrou aparecem aqui.
-            </p>
-          </div>
+          {brandFilaments.length ? (
+            <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 xl:grid-cols-3">
+              {brandFilaments.map((filament) => (
+                <FilamentCard
+                  key={filament.id}
+                  filament={filament}
+                  href={`/dashboard/filamentos/${filament.id}`}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2 rounded-md border border-dashed border-border py-10 text-center text-muted-foreground">
+              <Layers className="size-6" aria-hidden="true" />
+              <p className="text-sm">Nenhum rolo cadastrado desta marca.</p>
+              <p className="max-w-sm text-[12.5px]">
+                Quando você cadastrar filamentos, cor, preço do rolo, preço
+                por kg e quanto sobrou aparecem aqui.
+              </p>
+            </div>
+          )}
         </section>
       </div>
 

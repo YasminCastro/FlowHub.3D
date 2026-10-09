@@ -12,6 +12,7 @@ import { MailModule } from './mail/mail.module.js';
 import { CategoryModule } from './category/category.module.js';
 import { PrinterModule } from './printer/printer.module.js';
 import { BrandModule } from './brand/brand.module.js';
+import { FilamentModule } from './filament/filament.module.js';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { BrandModule } from './brand/brand.module.js';
     CategoryModule,
     PrinterModule,
     BrandModule,
+    FilamentModule,
   ],
   controllers: [AppController, UserController],
   providers: [

@@ -36,10 +36,12 @@ import {
   PURCHASE_CHANNEL_LABELS,
   PurchaseChannel,
   getAveragePricePerKg,
+  getBrandPrice,
   getCostBenefit,
   getResearchedPrice,
   listBrands,
 } from "@/lib/api/brand";
+import { Filament, listFilaments } from "@/lib/api/filament";
 import { cn, formatBRL } from "@/lib/utils";
 
 const FORM_ID = "brand-form";
@@ -165,6 +167,7 @@ export function BrandForm({
   const isEditing = !!brand;
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [otherBrands, setOtherBrands] = useState<Brand[] | null>(null);
+  const [filaments, setFilaments] = useState<Filament[]>([]);
 
   const form = useForm<BrandFormValues>({
     resolver: zodResolver(brandFormSchema),
@@ -181,6 +184,13 @@ export function BrandForm({
       )
       .catch(() => setOtherBrands(null));
   }, [brand?.id]);
+
+  // O preço por kg das marcas sai dos filamentos cadastrados.
+  useEffect(() => {
+    listFilaments()
+      .then(setFilaments)
+      .catch(() => setFilaments([]));
+  }, []);
 
   usePageHeaderBreadcrumb(breadcrumb);
 
@@ -255,20 +265,25 @@ export function BrandForm({
     researchedMaxPricePerKg:
       researchedMax === "" ? null : Number(researchedMax),
   });
-  // A marca do formulário entra na média junto com as outras ativas, como
-  // vai acontecer na lista depois de salvar.
-  const averagePricePerKg = getAveragePricePerKg([
-    ...(otherBrands ?? []).filter((item) => !item.archivedAt),
+  // Com filamentos cadastrados, o preço da marca sai deles e não da pesquisa.
+  const price = getBrandPrice(
     {
+      id: brand?.id ?? "",
       status,
       researchedMinPricePerKg: researchedPrice?.min ?? null,
       researchedMaxPricePerKg: researchedPrice?.max ?? null,
     },
-  ]);
-  const costBenefit = getCostBenefit(
-    researchedPrice?.average,
-    averagePricePerKg,
+    brand ? filaments : [],
   );
+  // A marca do formulário entra na média junto com as outras ativas, como
+  // vai acontecer na lista depois de salvar.
+  const averagePricePerKg = getAveragePricePerKg([
+    ...(otherBrands ?? [])
+      .filter((item) => !item.archivedAt)
+      .map((item) => getBrandPrice(item, filaments)?.average),
+    price?.average,
+  ]);
+  const costBenefit = getCostBenefit(price?.average, averagePricePerKg);
 
   const normalizedName = normalize(name);
   const similarBrand =
@@ -554,7 +569,7 @@ export function BrandForm({
             name={name}
             status={status}
             filamentTypes={filamentTypes}
-            researchedPrice={researchedPrice}
+            price={price}
             costBenefit={costBenefit}
           />
         </section>

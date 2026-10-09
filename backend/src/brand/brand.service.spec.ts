@@ -27,6 +27,7 @@ describe('BrandService', () => {
       update: AsyncMock;
       delete: AsyncMock;
     };
+    filament: { count: AsyncMock };
   };
 
   const userId = 'user-1';
@@ -49,6 +50,7 @@ describe('BrandService', () => {
         update: jest.fn(),
         delete: jest.fn(),
       },
+      filament: { count: jest.fn() },
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -354,8 +356,22 @@ describe('BrandService', () => {
       expect(prisma.brand.delete).not.toHaveBeenCalled();
     });
 
+    it('lança ConflictException se a marca tem filamentos', async () => {
+      prisma.brand.findFirst.mockResolvedValue(brand);
+      prisma.filament.count.mockResolvedValue(2);
+
+      await expect(service.deleteBrand(brandId, userId)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(prisma.filament.count).toHaveBeenCalledWith({
+        where: { brandId },
+      });
+      expect(prisma.brand.delete).not.toHaveBeenCalled();
+    });
+
     it('exclui a marca', async () => {
       prisma.brand.findFirst.mockResolvedValue(brand);
+      prisma.filament.count.mockResolvedValue(0);
 
       const result = await service.deleteBrand(brandId, userId);
 

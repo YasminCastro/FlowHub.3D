@@ -1,10 +1,10 @@
 import { Badge } from "@/components/ui/badge";
 import {
   BRAND_STATUS_LABELS,
+  BrandPrice,
   BrandStatus,
   COST_BENEFIT_LABELS,
   CostBenefit,
-  ResearchedPrice,
   formatResearchedRange,
 } from "@/lib/api/brand";
 import { cn, formatBRL } from "@/lib/utils";
@@ -58,23 +58,32 @@ export function CostBenefitBadge({
   );
 }
 
-// Por enquanto o único preço por kg é o pesquisado; o dos rolos vem depois.
+// "3 filamentos" / "1 filamento".
+export function formatFilamentCount(count: number) {
+  return `${count} ${count === 1 ? "filamento" : "filamentos"}`;
+}
+
+// De onde veio o preço, para a legenda: os rolos cadastrados ou a pesquisa.
+export function describeBrandPriceSource(price: BrandPrice) {
+  return price.source === "filaments"
+    ? formatFilamentCount(price.filamentCount)
+    : "pesquisado";
+}
+
 export function BrandPricePerKg({
-  researchedPrice,
+  price,
   align = "left",
 }: {
-  researchedPrice: ResearchedPrice | null;
+  price: BrandPrice | null;
   align?: "left" | "right";
 }) {
   return (
     <div className={cn("flex flex-col", align === "right" && "items-end")}>
-      {researchedPrice ? (
+      {price ? (
         <>
-          <span className="font-medium">
-            {formatBRL(researchedPrice.average)}
-          </span>
+          <span className="font-medium">{formatBRL(price.average)}</span>
           <span className="text-[11px] text-muted-foreground">
-            pesquisado · {formatResearchedRange(researchedPrice)}
+            {describeBrandPriceSource(price)} · {formatResearchedRange(price)}
           </span>
         </>
       ) : (
@@ -93,13 +102,13 @@ export function BrandRowPreview({
   name,
   status,
   filamentTypes,
-  researchedPrice,
+  price,
   costBenefit,
 }: {
   name: string;
   status: BrandStatus;
   filamentTypes: string[];
-  researchedPrice: ResearchedPrice | null;
+  price: BrandPrice | null;
   costBenefit: CostBenefit | null;
 }) {
   return (
@@ -116,7 +125,7 @@ export function BrandRowPreview({
           <span className="text-muted-foreground uppercase tracking-wide">
             Preço por kg
           </span>
-          <BrandPricePerKg researchedPrice={researchedPrice} />
+          <BrandPricePerKg price={price} />
         </div>
         <div className="flex flex-col gap-0.5">
           <span className="text-muted-foreground uppercase tracking-wide">

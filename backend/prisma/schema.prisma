@@ -30,6 +30,7 @@ model User {
   categories Category[]
   printers Printer[]
   brands Brand[]
+  filaments Filament[]
 }
 
 
@@ -129,6 +130,7 @@ model Brand {
   updatedAt               DateTime          @updatedAt
 
   notes BrandNote[]
+  filaments Filament[]
 
   @@unique([userId, name])
 }
@@ -142,4 +144,65 @@ model BrandNote {
   updatedAt DateTime @updatedAt
 
   @@index([brandId, createdAt])
+}
+
+enum FilamentAvailability {
+  AVAILABLE
+  SOLD_OUT
+}
+
+// Quanto tem no carretel, marcado à mão enquanto o consumo das impressões não
+// é registrado.
+enum SpoolLevel {
+  FULL
+  LOW
+  FINISHED
+}
+
+// Um filamento é o produto (marca + tipo + cor), comprado uma ou mais vezes.
+model Filament {
+  id                String               @id @default(uuid())
+  type              String
+  colorName         String
+  // De 1 a 3 cores em hex (#rrggbb), na ordem: rolos duo e tri color têm
+  // mais de uma. A amostra mostra um degradê entre elas.
+  colors            String[]
+  spoolWeightGrams  Int
+  // Preço pago pelo rolo inteiro (não por kg), menor e maior entre as compras.
+  minPricePaid      Float
+  maxPricePaid      Float?
+  purchaseCount     Int                  @default(1)
+  lastPurchasedAt   DateTime?
+  purchaseChannel   PurchaseChannel?
+  availability      FilamentAvailability @default(AVAILABLE)
+  // Comprado no outlet: em geral troca de cor, um rolo bem específico.
+  isOutlet          Boolean              @default(false)
+  spoolLevel        SpoolLevel           @default(FULL)
+  // Quando o carretel foi marcado como FINISHED; null nos outros níveis.
+  finishedAt        DateTime?
+  rating            Int?
+  ratingComment     String?
+  // Restrict: uma marca com filamentos não pode ser excluída, só arquivada.
+  brandId           String
+  brand             Brand                @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  userId            String
+  user              User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  notes FilamentNote[]
+
+  @@unique([userId, brandId, type, colorName])
+  @@index([brandId])
+}
+
+model FilamentNote {
+  id         String   @id @default(uuid())
+  content    String
+  filamentId String
+  filament   Filament @relation(fields: [filamentId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([filamentId, createdAt])
 }

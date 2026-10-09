@@ -30,21 +30,23 @@ import {
   CostBenefitBadge,
   BrandStatusBadge,
   FilamentTypeTags,
+  describeBrandPriceSource,
 } from "@/components/brands/brand-row-preview";
 import { usePageHeaderAction } from "@/contexts/page-header-action-context";
 import { ApiError } from "@/lib/api/auth";
 import {
   Brand,
+  BrandPrice,
   CostBenefit,
   FILAMENT_TYPE_OPTIONS,
   PURCHASE_CHANNEL_LABELS,
-  ResearchedPrice,
   getAveragePricePerKg,
+  getBrandPrice,
   getCostBenefit,
-  getResearchedPrice,
   listBrands,
   updateBrand,
 } from "@/lib/api/brand";
+import { Filament, listFilaments } from "@/lib/api/filament";
 import { cn, formatBRL } from "@/lib/utils";
 
 type ViewFilter = "all" | "favorites" | "purchased" | "researched";
@@ -69,7 +71,7 @@ const COST_BENEFIT_ORDER: Record<CostBenefit, number> = {
 
 type BrandRow = {
   brand: Brand;
-  price: ResearchedPrice | null;
+  price: BrandPrice | null;
   costBenefit: CostBenefit | null;
 };
 
@@ -174,6 +176,7 @@ function matchesView(brand: Brand, view: ViewFilter) {
 export default function BrandsPage() {
   const router = useRouter();
   const [brands, setBrands] = useState<Brand[]>([]);
+  const [filaments, setFilaments] = useState<Filament[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -199,9 +202,14 @@ export default function BrandsPage() {
 
     async function loadBrands() {
       try {
-        const active = await listBrands();
+        // O preço por kg de cada marca sai dos filamentos cadastrados dela.
+        const [active, allFilaments] = await Promise.all([
+          listBrands(),
+          listFilaments(),
+        ]);
         if (ignore) return;
         setBrands(active);
+        setFilaments(allFilaments);
       } catch (err) {
         if (ignore) return;
         setLoadError(
@@ -250,7 +258,12 @@ export default function BrandsPage() {
   );
 
   // A média usa todas as marcas ativas, não só as que passam nos filtros.
-  const averagePricePerKg = getAveragePricePerKg(brands);
+  const priceByBrand = new Map(
+    brands.map((brand) => [brand.id, getBrandPrice(brand, filaments)]),
+  );
+  const averagePricePerKg = getAveragePricePerKg(
+    [...priceByBrand.values()].map((price) => price?.average),
+  );
   const query = search.trim().toLowerCase();
   const visibleBrands: BrandRow[] = brands
     .filter(
@@ -260,7 +273,7 @@ export default function BrandsPage() {
         typeFilter.every((type) => brand.filamentTypes.includes(type)),
     )
     .map((brand) => {
-      const price = getResearchedPrice(brand);
+      const price = priceByBrand.get(brand.id) ?? null;
       return {
         brand,
         price,
@@ -274,11 +287,10 @@ export default function BrandsPage() {
     (brand) => brand.status === "RESEARCHED",
   ).length;
 
-  // Por enquanto o único preço por kg é o pesquisado; o dos rolos vem depois.
   const pricedBrands = brands
-    .map((brand) => ({ brand, price: getResearchedPrice(brand) }))
+    .map((brand) => ({ brand, price: priceByBrand.get(brand.id) ?? null }))
     .filter(
-      (item): item is { brand: Brand; price: ResearchedPrice } =>
+      (item): item is { brand: Brand; price: BrandPrice } =>
         item.price !== null,
     )
     .sort((a, b) => a.price.average - b.price.average);
@@ -288,13 +300,13 @@ export default function BrandsPage() {
 
   function priceStat(
     label: string,
-    item: { brand: Brand; price: ResearchedPrice } | undefined,
+    item: { brand: Brand; price: BrandPrice } | undefined,
   ) {
     return item
       ? {
           label,
           value: formatBRL(item.price.average),
-          caption: `${item.brand.name} · pesquisado`,
+          caption: `${item.brand.name} · ${describeBrandPriceSource(item.price)}`,
         }
       : { label, value: "—", caption: "sem preço cadastrado" };
   }
@@ -420,7 +432,7 @@ export default function BrandsPage() {
                   : "—"}
               </TableCell>
               <TableCell className="text-right">
-                <BrandPricePerKg researchedPrice={price} align="right" />
+                <BrandPricePerKg price={price} align="right" />
               </TableCell>
               <TableCell>
                 <CostBenefitBadge costBenefit={costBenefit} />

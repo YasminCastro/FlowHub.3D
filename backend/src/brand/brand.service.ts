@@ -211,6 +211,17 @@ export class BrandService {
   async deleteBrand(brandId: string, userId: string) {
     await this.findOwnedBrand(brandId, userId);
 
+    // Os filamentos guardam o histórico de compras da marca; com eles, ela
+    // só pode ser arquivada.
+    const filamentCount = await this.prisma.filament.count({
+      where: { brandId },
+    });
+    if (filamentCount > 0) {
+      throw new ConflictException(
+        'Essa marca tem filamentos cadastrados. Arquive a marca em vez de excluir.',
+      );
+    }
+
     await this.prisma.brand.delete({ where: { id: brandId } });
 
     return { message: 'Marca excluída com sucesso' };
