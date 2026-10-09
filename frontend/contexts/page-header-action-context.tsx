@@ -14,17 +14,26 @@ const PageHeaderActionValueContext = createContext<ReactNode>(null);
 const PageHeaderActionSetterContext =
   createContext<Dispatch<SetStateAction<ReactNode>> | null>(null);
 
+const PageHeaderBreadcrumbValueContext = createContext<ReactNode>(null);
+const PageHeaderBreadcrumbSetterContext =
+  createContext<Dispatch<SetStateAction<ReactNode>> | null>(null);
+
 export function PageHeaderActionProvider({
   children,
 }: {
   children: ReactNode;
 }) {
   const [action, setAction] = useState<ReactNode>(null);
+  const [breadcrumb, setBreadcrumb] = useState<ReactNode>(null);
 
   return (
     <PageHeaderActionSetterContext.Provider value={setAction}>
       <PageHeaderActionValueContext.Provider value={action}>
-        {children}
+        <PageHeaderBreadcrumbSetterContext.Provider value={setBreadcrumb}>
+          <PageHeaderBreadcrumbValueContext.Provider value={breadcrumb}>
+            {children}
+          </PageHeaderBreadcrumbValueContext.Provider>
+        </PageHeaderBreadcrumbSetterContext.Provider>
       </PageHeaderActionValueContext.Provider>
     </PageHeaderActionSetterContext.Provider>
   );
@@ -45,5 +54,24 @@ export function usePageHeaderAction(action: ReactNode) {
   useEffect(() => {
     setAction(action);
     return () => setAction(null);
+  });
+}
+
+export function usePageHeaderBreadcrumbSlot() {
+  return useContext(PageHeaderBreadcrumbValueContext);
+}
+
+/** Substitui as abas da seção por um trilho de navegação (ex: "Impressoras > Bambu Lab A1"). */
+export function usePageHeaderBreadcrumb(breadcrumb: ReactNode) {
+  const setBreadcrumb = useContext(PageHeaderBreadcrumbSetterContext);
+  if (!setBreadcrumb) {
+    throw new Error(
+      "usePageHeaderBreadcrumb must be used within a PageHeaderActionProvider",
+    );
+  }
+
+  useEffect(() => {
+    setBreadcrumb(breadcrumb);
+    return () => setBreadcrumb(null);
   });
 }

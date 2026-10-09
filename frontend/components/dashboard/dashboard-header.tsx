@@ -6,7 +6,10 @@ import { ChevronRightIcon, LogOutIcon } from "lucide-react";
 
 import { useAuth } from "@/contexts/auth-context";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { usePageHeaderActionSlot } from "@/contexts/page-header-action-context";
+import {
+  usePageHeaderActionSlot,
+  usePageHeaderBreadcrumbSlot,
+} from "@/contexts/page-header-action-context";
 import { cn } from "@/lib/utils";
 
 const CONFIG_TABS = [
@@ -16,14 +19,24 @@ const CONFIG_TABS = [
   { title: "Custos e energia", url: "/dashboard/custos-energia" },
 ];
 
+const EQUIPAMENT_TABS = [
+  { title: "Impressoras", url: "/dashboard/printers" },
+  { title: "Filamentos", url: "/dashboard/filaments" },
+];
+
 export function DashboardHeader() {
   const pathname = usePathname();
   const router = useRouter();
   const { logout } = useAuth();
   const headerAction = usePageHeaderActionSlot();
+  const breadcrumb = usePageHeaderBreadcrumbSlot();
 
   const isPerfil = pathname.startsWith("/dashboard/perfil");
   const isConfigSection = CONFIG_TABS.some((tab) =>
+    pathname.startsWith(tab.url),
+  );
+
+  const isEquipamentSection = EQUIPAMENT_TABS.some((tab) =>
     pathname.startsWith(tab.url),
   );
 
@@ -50,6 +63,7 @@ export function DashboardHeader() {
           </button>
         </>
       )}
+
       {isConfigSection && (
         <>
           <nav className="flex h-full items-stretch gap-4">
@@ -70,6 +84,39 @@ export function DashboardHeader() {
             })}
           </nav>
           {headerAction && <div className="ml-auto">{headerAction}</div>}
+        </>
+      )}
+
+      {isEquipamentSection && (
+        <>
+          {breadcrumb ? (
+            <div className="flex items-center gap-1.5 text-sm">
+              {breadcrumb}
+            </div>
+          ) : (
+            <nav className="flex h-full items-stretch gap-4">
+              {EQUIPAMENT_TABS.map((tab) => {
+                const isActive = pathname.startsWith(tab.url);
+                return (
+                  <Link
+                    key={tab.url}
+                    href={tab.url}
+                    className={cn(
+                      "flex items-center border-b-2 border-transparent text-sm text-muted-foreground transition-colors hover:text-foreground",
+                      isActive && "border-brand font-medium text-foreground",
+                    )}
+                  >
+                    {tab.title}
+                  </Link>
+                );
+              })}
+            </nav>
+          )}
+          {headerAction && (
+            <div className="ml-auto flex items-center gap-2">
+              {headerAction}
+            </div>
+          )}
         </>
       )}
     </header>
