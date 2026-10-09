@@ -29,6 +29,7 @@ model User {
 
   categories Category[]
   printers Printer[]
+  brands Brand[]
 }
 
 
@@ -91,4 +92,54 @@ model PrinterMaintenance {
   updatedAt         DateTime        @updatedAt
 
   @@index([printerId, date])
+}
+
+enum PurchaseChannel {
+  OWN_SITE
+  MERCADO_LIVRE
+  AMAZON
+  SHOPEE
+  ALIEXPRESS
+  PHYSICAL_STORE
+  OTHER
+}
+
+enum BrandStatus {
+  PURCHASED
+  RESEARCHED
+}
+
+model Brand {
+  id                      String            @id @default(uuid())
+  name                    String
+  website                 String?
+  purchaseChannels        PurchaseChannel[] @default([])
+  filamentTypes           String[]          @default([])
+  status                  BrandStatus       @default(PURCHASED)
+  // Faixa de preço por kg levantada enquanto a marca é só pesquisa.
+  researchedMinPricePerKg Float?
+  researchedMaxPricePerKg Float?
+  // Cores preferidas em texto livre ("Pastéis", "Preto"), na ordem adicionada.
+  preferredColors         String[]          @default([])
+  isFavorite              Boolean           @default(false)
+  archivedAt              DateTime?
+  userId                  String
+  user                    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
+
+  notes BrandNote[]
+
+  @@unique([userId, name])
+}
+
+model BrandNote {
+  id        String   @id @default(uuid())
+  content   String
+  brandId   String
+  brand     Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([brandId, createdAt])
 }

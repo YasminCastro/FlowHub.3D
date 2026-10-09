@@ -11,6 +11,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { MailModule } from './mail/mail.module.js';
 import { CategoryModule } from './category/category.module.js';
 import { PrinterModule } from './printer/printer.module.js';
+import { BrandModule } from './brand/brand.module.js';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { PrinterModule } from './printer/printer.module.js';
     MailModule,
     CategoryModule,
     PrinterModule,
+    BrandModule,
   ],
   controllers: [AppController, UserController],
   providers: [

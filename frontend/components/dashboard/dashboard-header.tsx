@@ -66,23 +66,29 @@ export function DashboardHeader() {
 
       {isConfigSection && (
         <>
-          <nav className="flex h-full items-stretch gap-4">
-            {CONFIG_TABS.map((tab) => {
-              const isActive = pathname.startsWith(tab.url);
-              return (
-                <Link
-                  key={tab.url}
-                  href={tab.url}
-                  className={cn(
-                    "flex items-center border-b-2 border-transparent text-sm text-muted-foreground transition-colors hover:text-foreground",
-                    isActive && "border-brand font-medium text-foreground",
-                  )}
-                >
-                  {tab.title}
-                </Link>
-              );
-            })}
-          </nav>
+          {breadcrumb ? (
+            <div className="flex items-center gap-1.5 text-sm">
+              {breadcrumb}
+            </div>
+          ) : (
+            <nav className="flex h-full items-stretch gap-4">
+              {CONFIG_TABS.map((tab) => {
+                const isActive = pathname.startsWith(tab.url);
+                return (
+                  <Link
+                    key={tab.url}
+                    href={tab.url}
+                    className={cn(
+                      "flex items-center border-b-2 border-transparent text-sm text-muted-foreground transition-colors hover:text-foreground",
+                      isActive && "border-brand font-medium text-foreground",
+                    )}
+                  >
+                    {tab.title}
+                  </Link>
+                );
+              })}
+            </nav>
+          )}
           {headerAction && <div className="ml-auto">{headerAction}</div>}
         </>
       )}
