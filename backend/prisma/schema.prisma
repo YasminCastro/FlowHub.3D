@@ -63,5 +63,32 @@ model Printer {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  maintenances PrinterMaintenance[]
+
   @@unique([userId, name])
+}
+
+enum MaintenanceType {
+  LUBRICATION
+  CLEANING
+  NOZZLE_CHANGE
+  OTHER
+}
+
+model PrinterMaintenance {
+  id                String          @id @default(uuid())
+  type              MaintenanceType
+  date              DateTime
+  printerHours      Float?
+  cost              Float?
+  description       String?
+  remindAfterHours  Float?
+  nozzleInstalled   String?
+  nozzleRemoved     String?
+  printerId         String
+  printer           Printer         @relation(fields: [printerId], references: [id], onDelete: Cascade)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([printerId, date])
 }

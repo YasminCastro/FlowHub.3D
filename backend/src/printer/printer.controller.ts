@@ -3,7 +3,6 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   Param,
   Patch,
@@ -31,17 +30,31 @@ export class PrinterController {
   }
 
   @Get(':id')
-  getById(@Param('id') printerId: string) {
-    return this.printerService.getPrinterById(printerId);
+  getById(
+    @CurrentUser('userId') currentUserId: string,
+    @Param('id') printerId: string,
+  ) {
+    return this.printerService.getPrinterById(printerId, currentUserId);
   }
 
   @Patch(':id')
-  async update(@Param('id') printerId: string, @Body() dto: PrinterDto) {
-    return await this.printerService.updatePrinter(printerId, dto);
+  async update(
+    @CurrentUser('userId') currentUserId: string,
+    @Param('id') printerId: string,
+    @Body() dto: PrinterDto,
+  ) {
+    return await this.printerService.updatePrinter(
+      printerId,
+      currentUserId,
+      dto,
+    );
   }
 
   @Delete(':id')
-  async delete(@Param('id') printerId: string) {
-    return await this.printerService.deletePrinter(printerId);
+  async delete(
+    @CurrentUser('userId') currentUserId: string,
+    @Param('id') printerId: string,
+  ) {
+    return await this.printerService.deletePrinter(printerId, currentUserId);
   }
 }

@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { PrinterService } from './printer.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { PrinterDto } from './dto/printer.js';
@@ -12,6 +12,7 @@ describe('PrinterService', () => {
   let prisma: {
     printer: {
       findUnique: AsyncMock;
+      findFirst: AsyncMock;
       findMany: AsyncMock;
       create: AsyncMock;
       update: AsyncMock;
@@ -40,6 +41,7 @@ describe('PrinterService', () => {
     prisma = {
       printer: {
         findUnique: jest.fn(),
+        findFirst: jest.fn(),
         findMany: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
@@ -100,36 +102,52 @@ describe('PrinterService', () => {
   });
 
   describe('getPrinterById', () => {
-    it('returns the printer without the userId field', async () => {
+    it('busca a impressora filtrando pelo usuário, sem o userId', async () => {
       const printer = { id: printerId, name: 'Ender 3' };
-      prisma.printer.findUnique.mockResolvedValue(printer);
+      prisma.printer.findFirst.mockResolvedValue(printer);
 
-      const result = await service.getPrinterById(printerId);
+      const result = await service.getPrinterById(printerId, userId);
 
-      expect(prisma.printer.findUnique).toHaveBeenCalledWith({
-        where: { id: printerId },
+      expect(prisma.printer.findFirst).toHaveBeenCalledWith({
+        where: { id: printerId, userId },
         omit: { userId: true },
       });
       expect(result).toBe(printer);
     });
+
+    it('lança NotFoundException para impressora de outro usuário', async () => {
+      prisma.printer.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.getPrinterById(printerId, 'outro-usuario'),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.printer.findFirst).toHaveBeenCalledWith({
+        where: { id: printerId, userId: 'outro-usuario' },
+        omit: { userId: true },
+      });
+    });
   });
 
   describe('updatePrinter', () => {
-    it('throws ConflictException when the printer does not exist', async () => {
-      prisma.printer.findUnique.mockResolvedValue(null);
+    it('lança NotFoundException e não altera impressora de outro usuário', async () => {
+      prisma.printer.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.updatePrinter(printerId, { name: 'New name' }),
-      ).rejects.toThrow(ConflictException);
+        service.updatePrinter(printerId, 'outro-usuario', { name: 'New name' }),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.printer.findFirst).toHaveBeenCalledWith({
+        where: { id: printerId, userId: 'outro-usuario' },
+        omit: { userId: true },
+      });
       expect(prisma.printer.update).not.toHaveBeenCalled();
     });
 
-    it('updates the printer when it exists', async () => {
-      prisma.printer.findUnique.mockResolvedValue({ id: printerId });
+    it('atualiza a impressora do próprio usuário', async () => {
+      prisma.printer.findFirst.mockResolvedValue({ id: printerId });
       const updated = { id: printerId, name: 'New name' };
       prisma.printer.update.mockResolvedValue(updated);
 
-      const result = await service.updatePrinter(printerId, {
+      const result = await service.updatePrinter(printerId, userId, {
         name: 'New name',
       });
 
@@ -146,21 +164,25 @@ describe('PrinterService', () => {
   });
 
   describe('deletePrinter', () => {
-    it('throws ConflictException when the printer does not exist', async () => {
-      prisma.printer.findUnique.mockResolvedValue(null);
+    it('lança NotFoundException e não exclui impressora de outro usuário', async () => {
+      prisma.printer.findFirst.mockResolvedValue(null);
 
-      await expect(service.deletePrinter(printerId)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(
+        service.deletePrinter(printerId, 'outro-usuario'),
+      ).rejects.toThrow(NotFoundException);
       expect(prisma.printer.delete).not.toHaveBeenCalled();
     });
 
-    it('deletes the printer when it exists', async () => {
-      prisma.printer.findUnique.mockResolvedValue({ id: printerId });
+    it('exclui a impressora do próprio usuário', async () => {
+      prisma.printer.findFirst.mockResolvedValue({ id: printerId });
       prisma.printer.delete.mockResolvedValue({ id: printerId });
 
-      const result = await service.deletePrinter(printerId);
+      const result = await service.deletePrinter(printerId, userId);
 
+      expect(prisma.printer.findFirst).toHaveBeenCalledWith({
+        where: { id: printerId, userId },
+        omit: { userId: true },
+      });
       expect(prisma.printer.delete).toHaveBeenCalledWith({
         where: { id: printerId },
       });

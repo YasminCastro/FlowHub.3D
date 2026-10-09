@@ -16,20 +16,42 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PrinterCostSummary } from "@/components/printers/printer-cost-summary";
 import { PrinterDeleteDialog } from "@/components/printers/printer-delete-dialog";
+import { PrinterMaintenanceDeleteDialog } from "@/components/printers/printer-maintenance-delete-dialog";
+import { PrinterMaintenanceDetailDialog } from "@/components/printers/printer-maintenance-detail-dialog";
+import { PrinterMaintenanceDialog } from "@/components/printers/printer-maintenance-dialog";
+import { PrinterMaintenanceHistory } from "@/components/printers/printer-maintenance-history";
 import { PrinterSpecCard } from "@/components/printers/printer-spec-card";
 import {
   usePageHeaderAction,
   usePageHeaderBreadcrumb,
 } from "@/contexts/page-header-action-context";
 import { usePrinter } from "@/hooks/use-printer";
-import { buildPrinterStats } from "@/lib/api/printer";
+import { usePrinterMaintenances } from "@/hooks/use-printer-maintenances";
+import { PrinterMaintenance, buildPrinterStats } from "@/lib/api/printer";
 import { formatDatePtBR } from "@/lib/utils";
 
 export default function PrinterDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { printer, isLoading, loadError } = usePrinter(params.id);
+  const { printer, isLoading, loadError, reload } = usePrinter(params.id);
+  const maintenanceHistory = usePrinterMaintenances(params.id);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isMaintenanceDialogOpen, setIsMaintenanceDialogOpen] =
+    useState(false);
+  // Manutenção aberta no histórico. Fica guardada depois de fechar os
+  // diálogos para que eles animem a saída com o conteúdo ainda visível.
+  const [selectedMaintenance, setSelectedMaintenance] =
+    useState<PrinterMaintenance | null>(null);
+  const [isEditingMaintenance, setIsEditingMaintenance] = useState(false);
+  const [isMaintenanceDetailOpen, setIsMaintenanceDetailOpen] =
+    useState(false);
+  const [isMaintenanceDeleteOpen, setIsMaintenanceDeleteOpen] =
+    useState(false);
+
+  function reloadAfterMaintenanceChange() {
+    reload();
+    maintenanceHistory.reload();
+  }
 
   usePageHeaderBreadcrumb(
     printer ? (
@@ -52,7 +74,14 @@ export default function PrinterDetailPage() {
   usePageHeaderAction(
     printer ? (
       <div className="flex items-center gap-2">
-        <Button variant="default" size="sm">
+        <Button
+          variant="default"
+          size="sm"
+          onClick={() => {
+            setIsEditingMaintenance(false);
+            setIsMaintenanceDialogOpen(true);
+          }}
+        >
           <Wrench />
           Registrar manutenção
         </Button>
@@ -147,11 +176,63 @@ export default function PrinterDetailPage() {
         <Separator />
 
         <PrinterSpecCard printer={printer} />
+
+        <Separator />
+
+        <PrinterMaintenanceHistory
+          maintenances={maintenanceHistory.maintenances}
+          totalCost={maintenanceHistory.totalCost}
+          isLoading={maintenanceHistory.isLoading}
+          loadError={maintenanceHistory.loadError}
+          onSelect={(maintenance) => {
+            setSelectedMaintenance(maintenance);
+            setIsMaintenanceDetailOpen(true);
+          }}
+        />
       </div>
 
       <PrinterCostSummary
         energyCostPerHour={energyCostPerHour}
         maintenanceCostPerHour={maintenanceCostPerHour}
+      />
+
+      <PrinterMaintenanceDialog
+        printerId={printer.id}
+        printerName={printer.name}
+        currentNozzle={printer.nozzle}
+        lastPrinterHours={
+          maintenanceHistory.maintenances.find(
+            (maintenance) => maintenance.printerHours != null,
+          )?.printerHours ?? null
+        }
+        maintenance={isEditingMaintenance ? selectedMaintenance : null}
+        open={isMaintenanceDialogOpen}
+        onOpenChange={setIsMaintenanceDialogOpen}
+        onRegistered={reloadAfterMaintenanceChange}
+      />
+
+      <PrinterMaintenanceDetailDialog
+        printerName={printer.name}
+        maintenance={selectedMaintenance}
+        open={isMaintenanceDetailOpen}
+        onOpenChange={setIsMaintenanceDetailOpen}
+        onEdit={() => {
+          setIsMaintenanceDetailOpen(false);
+          setIsEditingMaintenance(true);
+          setIsMaintenanceDialogOpen(true);
+        }}
+        onDelete={() => {
+          setIsMaintenanceDetailOpen(false);
+          setIsMaintenanceDeleteOpen(true);
+        }}
+      />
+
+      <PrinterMaintenanceDeleteDialog
+        printerId={printer.id}
+        maintenance={selectedMaintenance}
+        open={isMaintenanceDeleteOpen}
+        onOpenChange={setIsMaintenanceDeleteOpen}
+        onDeleted={reloadAfterMaintenanceChange}
       />
 
       <PrinterDeleteDialog

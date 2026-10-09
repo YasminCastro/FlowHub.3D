@@ -81,9 +81,9 @@ describe('PrinterController', () => {
       const printer = { id: printerId, name: dto.name };
       service.getPrinterById.mockResolvedValue(printer as any);
 
-      const response = await controller.getById(printerId);
+      const response = await controller.getById(userId, printerId);
 
-      expect(service.getPrinterById).toHaveBeenCalledWith(printerId);
+      expect(service.getPrinterById).toHaveBeenCalledWith(printerId, userId);
       expect(response).toBe(printer);
     });
   });
@@ -96,9 +96,13 @@ describe('PrinterController', () => {
       };
       service.updatePrinter.mockResolvedValue(result as any);
 
-      const response = await controller.update(printerId, dto);
+      const response = await controller.update(userId, printerId, dto);
 
-      expect(service.updatePrinter).toHaveBeenCalledWith(printerId, dto);
+      expect(service.updatePrinter).toHaveBeenCalledWith(
+        printerId,
+        userId,
+        dto,
+      );
       expect(response).toBe(result);
     });
   });
@@ -108,9 +112,9 @@ describe('PrinterController', () => {
       const result = { message: 'Impressora deletada com sucesso' };
       service.deletePrinter.mockResolvedValue(result as any);
 
-      const response = await controller.delete(printerId);
+      const response = await controller.delete(userId, printerId);
 
-      expect(service.deletePrinter).toHaveBeenCalledWith(printerId);
+      expect(service.deletePrinter).toHaveBeenCalledWith(printerId, userId);
       expect(response).toBe(result);
     });
   });
