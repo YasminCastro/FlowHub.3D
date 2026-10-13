@@ -40,6 +40,8 @@ export function DashboardHeader() {
     pathname.startsWith(tab.url),
   );
 
+  const isJournalSection = pathname.startsWith("/dashboard/diario");
+
   return (
     <header className="flex h-12 items-center gap-2 border-b px-3">
       <SidebarTrigger />
@@ -118,6 +120,19 @@ export function DashboardHeader() {
               })}
             </nav>
           )}
+          {headerAction && (
+            <div className="ml-auto flex items-center gap-2">
+              {headerAction}
+            </div>
+          )}
+        </>
+      )}
+
+      {isJournalSection && (
+        <>
+          <div className="flex min-w-0 items-center gap-1.5 text-sm">
+            {breadcrumb ?? <span className="font-medium">Diário</span>}
+          </div>
           {headerAction && (
             <div className="ml-auto flex items-center gap-2">
               {headerAction}

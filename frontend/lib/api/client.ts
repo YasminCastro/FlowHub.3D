@@ -46,7 +46,10 @@ async function parseResponse(res: Response) {
 // auth headers themselves.
 export async function apiFetch(path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
-  headers.set("Content-Type", "application/json");
+  // Upload (FormData): o navegador monta o Content-Type com o boundary.
+  if (!(init.body instanceof FormData)) {
+    headers.set("Content-Type", "application/json");
+  }
   if (accessToken) {
     headers.set("Authorization", `Bearer ${accessToken}`);
   }

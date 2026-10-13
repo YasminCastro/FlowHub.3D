@@ -32,6 +32,7 @@ model User {
   brands Brand[]
   filaments Filament[]
   extraItems ExtraItem[]
+  journalEntries JournalEntry[]
 }
 
 
@@ -192,6 +193,7 @@ model Filament {
   updatedAt         DateTime             @updatedAt
 
   notes FilamentNote[]
+  journalEntries JournalEntry[]
 
   @@unique([userId, brandId, type, colorName])
   @@index([brandId])
@@ -237,4 +239,69 @@ model ExtraItemLot {
   updatedAt   DateTime  @updatedAt
 
   @@index([extraItemId, purchasedAt])
+}
+
+// Diário: um problema de impressão, o que foi tentado e o que resolveu.
+enum JournalStatus {
+  UNRESOLVED
+  IN_PROGRESS
+  RESOLVED
+}
+
+enum AttemptOutcome {
+  WORKED
+  FAILED
+}
+
+model JournalEntry {
+  id             String        @id @default(uuid())
+  title          String
+  occurredAt     DateTime
+  // RESOLVED vem de uma tentativa WORKED; sem ela, o usuário escolhe entre
+  // IN_PROGRESS e UNRESOLVED.
+  status         JournalStatus @default(IN_PROGRESS)
+  symptom        String
+  possibleCauses String        @default("")
+  notes          String?
+  // SetNull: excluir o filamento não apaga o histórico de problemas.
+  filamentId     String?
+  filament       Filament?     @relation(fields: [filamentId], references: [id], onDelete: SetNull)
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  attempts JournalAttempt[]
+  photos   JournalPhoto[]
+
+  @@index([userId, occurredAt])
+  @@index([filamentId])
+}
+
+// Uma coisa testada para resolver o problema. A posição define a numeração.
+model JournalAttempt {
+  id          String          @id @default(uuid())
+  position    Int
+  description String
+  // null = ainda não sabe se funcionou.
+  outcome     AttemptOutcome?
+  triedAt     DateTime
+  note        String?
+  entryId     String
+  entry       JournalEntry    @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([entryId, position])
+}
+
+// Foto do problema, guardada em disco (UPLOADS_DIR) com nome aleatório.
+model JournalPhoto {
+  id        String       @id @default(uuid())
+  filename  String       @unique
+  entryId   String
+  entry     JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  createdAt DateTime     @default(now())
+
+  @@index([entryId, createdAt])
 }
