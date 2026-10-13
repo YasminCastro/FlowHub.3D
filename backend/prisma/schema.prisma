@@ -33,6 +33,7 @@ model User {
   filaments Filament[]
   extraItems ExtraItem[]
   journalEntries JournalEntry[]
+  costSettings CostSettings?
 }
 
 
@@ -304,4 +305,22 @@ model JournalPhoto {
   createdAt DateTime     @default(now())
 
   @@index([entryId, createdAt])
+}
+
+// Parâmetros globais de custo. Uma linha por usuário; sem linha, valem os
+// padrões do serviço.
+model CostSettings {
+  id                    String   @id @default(uuid())
+  energyCostPerKwh      Float
+  currency              String   @default("BRL")
+  laborCostPerHour      Float
+  prepMinutesPerPiece   Int
+  defaultMarginPercent  Float
+  packagingCost         Float
+  failureReservePercent Float
+  otherFixedCost        Float    @default(0)
+  userId                String   @unique
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 }

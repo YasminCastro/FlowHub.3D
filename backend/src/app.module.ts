@@ -15,6 +15,7 @@ import { BrandModule } from './brand/brand.module.js';
 import { FilamentModule } from './filament/filament.module.js';
 import { ExtraItemModule } from './extra-item/extra-item.module.js';
 import { JournalModule } from './journal/journal.module.js';
+import { CostSettingsModule } from './cost-settings/cost-settings.module.js';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { JournalModule } from './journal/journal.module.js';
     FilamentModule,
     ExtraItemModule,
     JournalModule,
+    CostSettingsModule,
   ],
   controllers: [AppController, UserController],
   providers: [

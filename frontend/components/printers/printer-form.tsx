@@ -32,13 +32,18 @@ import {
   usePageHeaderBreadcrumb,
 } from "@/contexts/page-header-action-context";
 import { ApiError } from "@/lib/api/auth";
+import {
+  DEFAULT_COST_SETTINGS,
+  getCostSettings,
+  hasOwnTariff,
+} from "@/lib/api/cost-settings";
 import { Printer, PrinterInput } from "@/lib/api/printer";
 import { cn, formatBRL } from "@/lib/utils";
 
 const FORM_ID = "printer-form";
 
-// Até existir uma tela de "Custos e energia", a tarifa padrão é fixa aqui.
-const DEFAULT_TARIFF_PER_KWH = 0.92;
+// Valor inicial até carregar a tarifa global de "Custos e energia".
+const DEFAULT_TARIFF_PER_KWH = DEFAULT_COST_SETTINGS.energyCostPerKwh;
 
 const BRAND_SUGGESTIONS = [
   "Bambu Lab",
@@ -168,6 +173,23 @@ export function PrinterForm({
     resolver: zodResolver(printerFormSchema),
     defaultValues: toDefaultValues(printer),
   });
+
+  // Sem tarifa própria, a impressora acompanha a tarifa global.
+  useEffect(() => {
+    let ignore = false;
+    getCostSettings().then((settings) => {
+      if (ignore) return;
+      const isOwn = !!printer && hasOwnTariff(printer, settings);
+      setCustomTariff(isOwn);
+      if (!isOwn) {
+        form.setValue("energyCostPerKwh", settings.energyCostPerKwh.toString());
+      }
+    });
+    return () => {
+      ignore = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [printer]);
 
   const watchedPurchasePrice = form.watch("purchasePrice");
   const watchedLifespanHours = form.watch("lifespanHours");
