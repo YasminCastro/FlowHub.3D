@@ -13,6 +13,7 @@ import { CategoryModule } from './category/category.module.js';
 import { PrinterModule } from './printer/printer.module.js';
 import { BrandModule } from './brand/brand.module.js';
 import { FilamentModule } from './filament/filament.module.js';
+import { ExtraItemModule } from './extra-item/extra-item.module.js';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { FilamentModule } from './filament/filament.module.js';
     PrinterModule,
     BrandModule,
     FilamentModule,
+    ExtraItemModule,
   ],
   controllers: [AppController, UserController],
   providers: [

@@ -63,10 +63,16 @@ export async function changePassword(
 }
 
 export async function refreshAccessToken() {
-  const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/refresh`, {
-    method: "POST",
-    credentials: "include",
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+    });
+  } catch {
+    setAccessToken(null);
+    return null;
+  }
 
   if (!res.ok) {
     setAccessToken(null);

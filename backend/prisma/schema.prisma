@@ -31,6 +31,7 @@ model User {
   printers Printer[]
   brands Brand[]
   filaments Filament[]
+  extraItems ExtraItem[]
 }
 
 
@@ -205,4 +206,35 @@ model FilamentNote {
   updatedAt  DateTime @updatedAt
 
   @@index([filamentId, createdAt])
+}
+
+// Argolas, ímãs, embalagens: o que entra na peça além do filamento. Comprado
+// em lote e usado por unidade; o custo unitário sai do lote mais recente.
+model ExtraItem {
+  id        String   @id @default(uuid())
+  name      String
+  notes     String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lots ExtraItemLot[]
+
+  @@unique([userId, name])
+}
+
+// Uma compra do item. O histórico mostra se o preço do lote subiu.
+model ExtraItemLot {
+  id          String    @id @default(uuid())
+  // Preço pago pelo lote inteiro, não por unidade.
+  price       Float
+  quantity    Int
+  purchasedAt DateTime
+  extraItemId String
+  extraItem   ExtraItem @relation(fields: [extraItemId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([extraItemId, purchasedAt])
 }
