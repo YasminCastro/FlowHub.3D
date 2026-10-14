@@ -14,6 +14,9 @@ describe('CategoryService', () => {
       update: jest.Mock;
       delete: jest.Mock;
     };
+    printItem: {
+      count: jest.Mock;
+    };
   };
 
   const userId = 'user-1';
@@ -28,6 +31,9 @@ describe('CategoryService', () => {
         create: jest.fn(),
         update: jest.fn(),
         delete: jest.fn(),
+      },
+      printItem: {
+        count: jest.fn(),
       },
     };
 
@@ -70,17 +76,44 @@ describe('CategoryService', () => {
   });
 
   describe('findAllCategories', () => {
-    it('returns categories scoped to the user', async () => {
-      const categories = [{ id: categoryId, name: 'Filamentos', color: '#ff0000' }];
-      prisma.category.findMany.mockResolvedValue(categories);
+    it('returns categories scoped to the user with their item count', async () => {
+      prisma.category.findMany.mockResolvedValue([
+        {
+          id: categoryId,
+          name: 'Filamentos',
+          color: '#ff0000',
+          _count: { printItems: 4 },
+        },
+      ]);
 
       const result = await service.findAllCategories(userId);
 
       expect(prisma.category.findMany).toHaveBeenCalledWith({
         where: { userId },
-        select: { id: true, name: true, color: true },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          color: true,
+          _count: { select: { printItems: true } },
+        },
       });
-      expect(result).toBe(categories);
+      expect(result).toEqual([
+        { id: categoryId, name: 'Filamentos', color: '#ff0000', itemCount: 4 },
+      ]);
+    });
+  });
+
+  describe('getSummary', () => {
+    it('counts the user print items without a category', async () => {
+      prisma.printItem.count.mockResolvedValue(3);
+
+      const result = await service.getSummary(userId);
+
+      expect(prisma.printItem.count).toHaveBeenCalledWith({
+        where: { userId, categoryId: null },
+      });
+      expect(result).toEqual({ uncategorizedItems: 3 });
     });
   });
 

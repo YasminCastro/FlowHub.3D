@@ -24,6 +24,7 @@ describe('CategoryController', () => {
           useValue: {
             createCategory: jest.fn(),
             findAllCategories: jest.fn(),
+            getSummary: jest.fn(),
             findCategoryById: jest.fn(),
             updateCategory: jest.fn(),
             deleteCategory: jest.fn(),
@@ -64,6 +65,18 @@ describe('CategoryController', () => {
 
       expect(service.findAllCategories).toHaveBeenCalledWith(userId);
       expect(response).toBe(categories);
+    });
+  });
+
+  describe('GET /category/summary', () => {
+    it('returns the usage summary for the current user', async () => {
+      const summary = { uncategorizedItems: 3 };
+      service.getSummary.mockResolvedValue(summary);
+
+      const response = await controller.getSummary(userId);
+
+      expect(service.getSummary).toHaveBeenCalledWith(userId);
+      expect(response).toBe(summary);
     });
   });
 

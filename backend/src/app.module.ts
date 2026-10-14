@@ -17,6 +17,7 @@ import { ExtraItemModule } from './extra-item/extra-item.module.js';
 import { JournalModule } from './journal/journal.module.js';
 import { CostSettingsModule } from './cost-settings/cost-settings.module.js';
 import { PrintModule } from './print/print.module.js';
+import { PrintQueueModule } from './print-queue/print-queue.module.js';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { PrintModule } from './print/print.module.js';
     JournalModule,
     CostSettingsModule,
     PrintModule,
+    PrintQueueModule,
   ],
   controllers: [AppController, UserController],
   providers: [

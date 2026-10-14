@@ -53,8 +53,10 @@ import { useEffect, useRef, useState } from "react";
 import { ApiError } from "@/lib/api/auth";
 import {
   Category,
+  CategoryWithUsage,
   createCategory,
   deleteCategory,
+  getCategorySummary,
   listCategories,
   updateCategory,
 } from "@/lib/api/category";
@@ -105,24 +107,13 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: "created-desc", label: "Criadas recentemente" },
 ];
 
-// Dados mockados até a API expor contagem de impressões por categoria.
-const MOCK_CATEGORY_USAGE = [
-  { name: "Home Office", color: "#7fb35c", count: 5 },
-  { name: "Chaveiro", color: "#e08a3c", count: 3 },
-  { name: "Decoração", color: "#4ba394", count: 3 },
-  { name: "Brinquedos", color: "#a3c14a", count: 2 },
-  { name: "Bijuterias", color: "#e0399e", count: 2 },
-  { name: "Ferramentas", color: "#e0b23c", count: 2 },
-  { name: "Suportes", color: "#4c8fd1", count: 2 },
-  { name: "Cosplay", color: "#e0575b", count: 2 },
-  { name: "Miniaturas", color: "#e06a3c", count: 1 },
-  { name: "Jardim", color: "#9ac14a", count: 1 },
-  { name: "Jogos", color: "#7c6de0", count: 1 },
-];
-const MOCK_WITHOUT_CATEGORY = 3;
+function formatPieces(count: number) {
+  return `${count} ${count === 1 ? "peça" : "peças"}`;
+}
 
 export default function CategoriesPage() {
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [categories, setCategories] = useState<CategoryWithUsage[]>([]);
+  const [uncategorizedItems, setUncategorizedItems] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -141,9 +132,8 @@ export default function CategoriesPage() {
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const [deletingCategory, setDeletingCategory] = useState<Category | null>(
-    null,
-  );
+  const [deletingCategory, setDeletingCategory] =
+    useState<CategoryWithUsage | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
@@ -160,7 +150,12 @@ export default function CategoriesPage() {
     setIsLoading(true);
     setLoadError(null);
     try {
-      setCategories(await listCategories());
+      const [list, summary] = await Promise.all([
+        listCategories(),
+        getCategorySummary(),
+      ]);
+      setCategories(list);
+      setUncategorizedItems(summary.uncategorizedItems);
     } catch (err) {
       setLoadError(
         err instanceof ApiError
@@ -177,7 +172,7 @@ export default function CategoriesPage() {
     setCreateError(null);
     try {
       const created = await createCategory(name, color);
-      setCategories((prev) => [...prev, created]);
+      setCategories((prev) => [...prev, { ...created, itemCount: 0 }]);
       setNewCategoryName("");
       setNewCategoryColor(PRESET_COLORS[0]);
     } catch (err) {
@@ -213,7 +208,7 @@ export default function CategoriesPage() {
         values.color,
       );
       setCategories((prev) =>
-        prev.map((c) => (c.id === updated.id ? updated : c)),
+        prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)),
       );
       setIsFormOpen(false);
       form.reset();
@@ -240,6 +235,8 @@ export default function CategoriesPage() {
     try {
       await deleteCategory(deletingCategory.id);
       setCategories((prev) => prev.filter((c) => c.id !== deletingCategory.id));
+      // As peças da categoria excluída ficam sem categoria.
+      setUncategorizedItems((prev) => prev + deletingCategory.itemCount);
       setDeletingCategory(null);
     } catch (err) {
       setDeleteError(
@@ -258,16 +255,26 @@ export default function CategoriesPage() {
     .filter((category) =>
       category.name.toLowerCase().includes(search.trim().toLowerCase()),
     )
+    .filter(
+      (category) => !(hideWithoutPrints || onlyInUse) || category.itemCount > 0,
+    )
     .sort((a, b) => {
       switch (sortOption) {
+        case "usage-desc":
+          return (
+            b.itemCount - a.itemCount || a.name.localeCompare(b.name, "pt-BR")
+          );
+        case "usage-asc":
+          return (
+            a.itemCount - b.itemCount || a.name.localeCompare(b.name, "pt-BR")
+          );
         case "name-asc":
           return a.name.localeCompare(b.name, "pt-BR");
         case "name-desc":
           return b.name.localeCompare(a.name, "pt-BR");
         case "created-desc":
+          // A API devolve as categorias na ordem de criação.
           return categories.indexOf(b) - categories.indexOf(a);
-        default:
-          return 0;
       }
     });
 
@@ -275,12 +282,16 @@ export default function CategoriesPage() {
     (option) => option.value === sortOption,
   )?.label;
 
-  const categorizedTotal = MOCK_CATEGORY_USAGE.reduce(
-    (sum, item) => sum + item.count,
+  const usedCategories = categories
+    .filter((category) => category.itemCount > 0)
+    .sort((a, b) => b.itemCount - a.itemCount);
+  const unusedCount = categories.length - usedCategories.length;
+  const categorizedTotal = usedCategories.reduce(
+    (sum, category) => sum + category.itemCount,
     0,
   );
-  const overallTotal = categorizedTotal + MOCK_WITHOUT_CATEGORY;
-  const [topCategory, secondCategory] = MOCK_CATEGORY_USAGE;
+  const overallTotal = categorizedTotal + uncategorizedItems;
+  const [topCategory, secondCategory] = usedCategories;
 
   return (
     <div className="p-8 flex flex-col gap-6">
@@ -369,21 +380,21 @@ export default function CategoriesPage() {
           <span className="text-xs text-muted-foreground uppercase">
             Em uso
           </span>
-          <span className="text-3xl">{categories.length}</span>
+          <span className="text-3xl">{usedCategories.length}</span>
         </div>
         <Separator orientation="vertical" />
         <div className="flex items-center gap-2 flex-col">
           <span className="text-xs text-muted-foreground uppercase">
             Sem nenhuma impressão
           </span>
-          <span className="text-3xl">{categories.length}</span>
+          <span className="text-3xl">{unusedCount}</span>
         </div>
         <Separator orientation="vertical" />
         <div className="flex items-center gap-2 flex-col">
           <span className="text-xs text-muted-foreground uppercase">
             Impressões sem categoria
           </span>
-          <span className="text-3xl">{categories.length}</span>
+          <span className="text-3xl">{uncategorizedItems}</span>
         </div>
       </div>
 
@@ -391,60 +402,80 @@ export default function CategoriesPage() {
         <span className="text-xs text-muted-foreground uppercase">
           Uso por categoria
         </span>
-        <div className="flex h-3 w-full overflow-hidden rounded-full bg-muted">
-          {MOCK_CATEGORY_USAGE.map((item) => (
-            <Tooltip key={item.name}>
-              <TooltipTrigger
-                render={
-                  <div
-                    className="h-full"
-                    style={{
-                      backgroundColor: item.color,
-                      width: `${(item.count / overallTotal) * 100}%`,
-                    }}
+        {overallTotal === 0 ? (
+          <p className="text-[12.5px] text-muted-foreground">
+            Nenhuma peça impressa ainda.
+          </p>
+        ) : (
+          <>
+            <div className="flex h-3 w-full overflow-hidden rounded-full bg-muted">
+              {usedCategories.map((category) => (
+                <Tooltip key={category.id}>
+                  <TooltipTrigger
+                    render={
+                      <div
+                        className="h-full"
+                        style={{
+                          backgroundColor: category.color,
+                          width: `${(category.itemCount / overallTotal) * 100}%`,
+                        }}
+                      />
+                    }
                   />
-                }
-              />
-              <TooltipContent>
-                {item.name}: {item.count} {item.count === 1 ? "peça" : "peças"}
-              </TooltipContent>
-            </Tooltip>
-          ))}
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <div
-                  className="h-full bg-muted-foreground/40"
-                  style={{
-                    width: `${(MOCK_WITHOUT_CATEGORY / overallTotal) * 100}%`,
-                  }}
+                  <TooltipContent>
+                    {category.name}: {formatPieces(category.itemCount)}
+                  </TooltipContent>
+                </Tooltip>
+              ))}
+              {uncategorizedItems > 0 && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <div
+                        className="h-full bg-muted-foreground/40"
+                        style={{
+                          width: `${(uncategorizedItems / overallTotal) * 100}%`,
+                        }}
+                      />
+                    }
+                  />
+                  <TooltipContent>
+                    Sem categoria: {formatPieces(uncategorizedItems)}
+                  </TooltipContent>
+                </Tooltip>
+              )}
+            </div>
+            <div className="flex items-center justify-between text-[12.5px] text-muted-foreground">
+              {topCategory ? (
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className="size-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: topCategory.color }}
+                    aria-hidden="true"
+                  />
+                  {secondCategory ? (
+                    <>
+                      {topCategory.name} e {secondCategory.name} somam{" "}
+                      {topCategory.itemCount + secondCategory.itemCount} das{" "}
+                      {formatPieces(categorizedTotal)}
+                    </>
+                  ) : (
+                    <>Todas as peças categorizadas são de {topCategory.name}</>
+                  )}
+                </span>
+              ) : (
+                <span>Nenhuma peça categorizada ainda</span>
+              )}
+              <span className="flex items-center gap-1.5">
+                <span
+                  className="size-2 shrink-0 rounded-full bg-muted-foreground/40"
+                  aria-hidden="true"
                 />
-              }
-            />
-            <TooltipContent>
-              Sem categoria: {MOCK_WITHOUT_CATEGORY} peças
-            </TooltipContent>
-          </Tooltip>
-        </div>
-        <div className="flex items-center justify-between text-[12.5px] text-muted-foreground">
-          <span className="flex items-center gap-1.5">
-            <span
-              className="size-2 shrink-0 rounded-full"
-              style={{ backgroundColor: topCategory.color }}
-              aria-hidden="true"
-            />
-            {topCategory.name} e {secondCategory.name} somam{" "}
-            {topCategory.count + secondCategory.count} das {categorizedTotal}{" "}
-            peças
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span
-              className="size-2 shrink-0 rounded-full bg-muted-foreground/40"
-              aria-hidden="true"
-            />
-            {MOCK_WITHOUT_CATEGORY} peças sem categoria
-          </span>
-        </div>
+                {formatPieces(uncategorizedItems)} sem categoria
+              </span>
+            </div>
+          </>
+        )}
       </div>
 
       <Separator />
@@ -518,7 +549,11 @@ export default function CategoriesPage() {
         <div className="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground">
           <Search className="size-6" aria-hidden="true" />
           <p className="text-sm">
-            Nenhuma categoria encontrada para &ldquo;{search}&rdquo;.
+            {search.trim() ? (
+              <>Nenhuma categoria encontrada para &ldquo;{search}&rdquo;.</>
+            ) : (
+              "Nenhuma categoria em uso."
+            )}
           </p>
         </div>
       ) : (
@@ -548,7 +583,15 @@ export default function CategoriesPage() {
                   </div>
                 </TableCell>
                 <TableCell>
-                  <span>2</span>
+                  <span
+                    className={
+                      category.itemCount === 0
+                        ? "text-muted-foreground"
+                        : undefined
+                    }
+                  >
+                    {category.itemCount}
+                  </span>
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center justify-end gap-1">
@@ -675,8 +718,20 @@ export default function CategoriesPage() {
             <DialogDescription>
               {deletingCategory && (
                 <>
-                  Isso remove &ldquo;{deletingCategory.name}&rdquo; das
-                  impressões que a usam. Esta ação não pode ser desfeita.
+                  {deletingCategory.itemCount > 0 ? (
+                    <>
+                      Isso remove &ldquo;{deletingCategory.name}&rdquo; de{" "}
+                      {formatPieces(deletingCategory.itemCount)}, que{" "}
+                      {deletingCategory.itemCount === 1 ? "fica" : "ficam"} sem
+                      categoria.
+                    </>
+                  ) : (
+                    <>
+                      &ldquo;{deletingCategory.name}&rdquo; não está em nenhuma
+                      impressão.
+                    </>
+                  )}{" "}
+                  Esta ação não pode ser desfeita.
                 </>
               )}
             </DialogDescription>

@@ -35,6 +35,7 @@ model User {
   journalEntries JournalEntry[]
   costSettings CostSettings?
   printItems PrintItem[]
+  printQueueEntries PrintQueueEntry[]
 }
 
 
@@ -73,6 +74,7 @@ model Printer {
 
   maintenances PrinterMaintenance[]
   printRecords PrintRecord[]
+  printQueueEntries PrintQueueEntry[]
 
   @@unique([userId, name])
 }
@@ -200,6 +202,7 @@ model Filament {
   notes FilamentNote[]
   journalEntries JournalEntry[]
   printUsages PrintRecordFilament[]
+  queueUsages PrintQueueFilament[]
 
   @@unique([userId, brandId, type, colorName])
   @@index([brandId])
@@ -354,6 +357,7 @@ model PrintItem {
   updatedAt     DateTime    @updatedAt
 
   records PrintRecord[]
+  queueEntries PrintQueueEntry[]
 
   @@unique([userId, name])
   @@index([categoryId])
@@ -429,4 +433,63 @@ model PrintPhoto {
   createdAt DateTime    @default(now())
 
   @@index([recordId, createdAt])
+}
+
+// Fila de impressão: o que vai imprimir, na ordem, com um orçamento rápido.
+// Concluído com sucesso, sai da fila (completedAt) e vira um registro em
+// Impressões; se falha, continua na fila marcado com a última falha.
+model PrintQueueEntry {
+  id                String             @id @default(uuid())
+  name              String
+  // Ordem entre os pendentes (0 = o próximo). Nos concluídos não importa.
+  position          Int
+  units             Int
+  // Tempo do lote inteiro (todas as unidades).
+  totalMinutes      Int
+  customer          String?
+  modelUrl          String?
+  // A impressão ligada: a escolhida ao adicionar ou onde foi registrada ao
+  // concluir. SetNull: excluir a impressão não apaga o item da fila.
+  printItemId       String?
+  printItem         PrintItem?         @relation(fields: [printItemId], references: [id], onDelete: SetNull)
+  // SetNull: excluir a impressora não apaga o item; o nome fica.
+  printerId         String?
+  printer           Printer?           @relation(fields: [printerId], references: [id], onDelete: SetNull)
+  printerName       String
+  lastFailureAt     DateTime?
+  lastFailureReason String?
+  completedAt       DateTime?
+  // Concluído criando uma impressão nova (em vez de um registro numa que já
+  // existia).
+  createdItem       Boolean            @default(false)
+  userId            String
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  filaments PrintQueueFilament[]
+
+  @@index([userId, completedAt, position])
+  @@index([printItemId])
+  @@index([printerId])
+}
+
+// Filamento previsto para um item da fila, com o preço e a identificação do
+// dia em que foi adicionado (como em PrintRecordFilament).
+model PrintQueueFilament {
+  id           String          @id @default(uuid())
+  position     Int
+  grams        Float
+  pricePerGram Float
+  colorName    String
+  type         String
+  brandName    String
+  colors       String[]
+  filamentId   String?
+  filament     Filament?       @relation(fields: [filamentId], references: [id], onDelete: SetNull)
+  entryId      String
+  entry        PrintQueueEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@index([entryId, position])
+  @@index([filamentId])
 }

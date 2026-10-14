@@ -7,5 +7,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 @Module({
   controllers: [PrintController],
   providers: [PrintService, PrintPhotoStorage, PrismaService],
+  // A fila conclui itens gravando registros por aqui.
+  exports: [PrintService],
 })
 export class PrintModule {}

@@ -141,8 +141,8 @@ export default function PrintsPage() {
       <Button
         variant="secondary"
         size="sm"
-        disabled
-        title="A fila de impressão ainda não existe"
+        render={<Link href="/dashboard/fila/new" />}
+        nativeButton={false}
       >
         <ListOrdered />
         Adicionar à fila

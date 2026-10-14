@@ -134,15 +134,18 @@ export const INFILL_PATTERNS = ["giroide", "grade", "cúbico", "linhas"];
 // ---------------------------------------------------------------------------
 // API
 
+// Filamento gasto, como vem do backend (registros e fila).
+export type PrintFilamentUsageResponse = {
+  id: string;
+  grams: number;
+  filament: Omit<PrintFilament, "id" | "spoolLevel"> & {
+    id: string | null;
+    spoolLevel: SpoolLevel | null;
+  };
+};
+
 type PrintRecordResponse = Omit<PrintRecord, "filaments" | "photos"> & {
-  filaments: {
-    id: string;
-    grams: number;
-    filament: Omit<PrintFilament, "id" | "spoolLevel"> & {
-      id: string | null;
-      spoolLevel: SpoolLevel | null;
-    };
-  }[];
+  filaments: PrintFilamentUsageResponse[];
   photos: { id: string; url: string }[];
 };
 
@@ -157,18 +160,24 @@ export function printPhotoSrc(url: string) {
   return `${process.env.NEXT_PUBLIC_API_URL}${url}`;
 }
 
+export function fromUsageResponse(
+  usage: PrintFilamentUsageResponse,
+): PrintFilamentUsage {
+  return {
+    usageId: usage.id,
+    grams: usage.grams,
+    filament: {
+      ...usage.filament,
+      id: usage.filament.id ?? `${DELETED_FILAMENT_PREFIX}${usage.id}`,
+      spoolLevel: usage.filament.spoolLevel ?? "FINISHED",
+    },
+  };
+}
+
 function fromRecordResponse(record: PrintRecordResponse): PrintRecord {
   return {
     ...record,
-    filaments: record.filaments.map((usage) => ({
-      usageId: usage.id,
-      grams: usage.grams,
-      filament: {
-        ...usage.filament,
-        id: usage.filament.id ?? `${DELETED_FILAMENT_PREFIX}${usage.id}`,
-        spoolLevel: usage.filament.spoolLevel ?? "FINISHED",
-      },
-    })),
+    filaments: record.filaments.map(fromUsageResponse),
     photos: record.photos.map((photo) => ({
       id: photo.id,
       src: printPhotoSrc(photo.url),
@@ -185,7 +194,7 @@ function fromItemResponse(item: PrintItemResponse): PrintItem {
   };
 }
 
-function toRecordPayload(input: PrintRecordInput) {
+export function toRecordPayload(input: PrintRecordInput) {
   if (!input.printer.id) throw new Error("Escolha a impressora.");
   return {
     printedAt: input.printedAt,
@@ -261,6 +270,26 @@ async function withPhotos(
           ? err.message
           : "Não foi possível enviar as fotos.",
     };
+  }
+}
+
+/**
+ * Fotos de um registro que acabou de ser salvo por outro caminho (a fila).
+ * Devolve o erro em vez de lançar: o registro já está salvo.
+ */
+export async function uploadRecordPhotos(
+  itemId: string,
+  recordId: string,
+  photos: File[],
+) {
+  if (!photos.length) return null;
+  try {
+    await addRecordPhotos(itemId, recordId, photos);
+    return null;
+  } catch (err) {
+    return err instanceof ApiError
+      ? err.message
+      : "Não foi possível enviar as fotos.";
   }
 }
 

@@ -30,6 +30,12 @@ export class CategoryController {
     return this.categoryService.findAllCategories(currentUserId);
   }
 
+  // Antes de ':id', senão "summary" seria tratado como id.
+  @Get('summary')
+  getSummary(@CurrentUser('userId') currentUserId: string) {
+    return this.categoryService.getSummary(currentUserId);
+  }
+
   @Get(':id')
   getOne(@Param('id') id: string) {
     return this.categoryService.findCategoryById(id);

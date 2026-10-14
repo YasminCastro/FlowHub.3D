@@ -1,0 +1,130 @@
+import { Type } from 'class-transformer';
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  IsUrl,
+  Max,
+  MaxLength,
+  Min,
+  ValidateNested,
+} from 'class-validator';
+import {
+  AddPrintRecordDto,
+  PRINT_MAX_FILAMENTS,
+  PRINT_MAX_GRAMS,
+  PRINT_MAX_MINUTES,
+  PRINT_MAX_UNITS,
+  PRINT_NAME_MAX_LENGTH,
+  PRINT_TEXT_MAX_LENGTH,
+  PRINT_URL_MAX_LENGTH,
+} from '../../print/dto/print.js';
+
+// Bem acima de qualquer fila real; só impede um reorder absurdo.
+export const QUEUE_MAX_ENTRIES = 1000;
+
+export const QUEUE_POSITIONS = ['first', 'last'] as const;
+export type QueuePosition = (typeof QUEUE_POSITIONS)[number];
+
+export class QueueFilamentDto {
+  @IsUUID()
+  filamentId!: string;
+
+  @IsNumber()
+  @Min(0.01)
+  @Max(PRINT_MAX_GRAMS)
+  grams!: number;
+}
+
+export class QueueEntryDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(PRINT_NAME_MAX_LENGTH)
+  name!: string;
+
+  // Ligado a uma impressão que já existe; sem ela, é uma peça nova.
+  @IsOptional()
+  @IsUUID()
+  printItemId?: string | null;
+
+  @IsUUID()
+  printerId!: string;
+
+  // Gramas do lote inteiro (todas as unidades).
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(PRINT_MAX_FILAMENTS)
+  @ValidateNested({ each: true })
+  @Type(() => QueueFilamentDto)
+  filaments!: QueueFilamentDto[];
+
+  @IsInt()
+  @Min(1)
+  @Max(PRINT_MAX_UNITS)
+  units!: number;
+
+  @IsInt()
+  @Min(1)
+  @Max(PRINT_MAX_MINUTES)
+  totalMinutes!: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(PRINT_TEXT_MAX_LENGTH)
+  customer?: string | null;
+
+  @IsOptional()
+  @IsUrl()
+  @MaxLength(PRINT_URL_MAX_LENGTH)
+  modelUrl?: string | null;
+
+  // Padrão: no fim.
+  @IsOptional()
+  @IsIn(QUEUE_POSITIONS)
+  position?: QueuePosition;
+}
+
+export class ReorderQueueDto {
+  // Ids dos pendentes na nova ordem.
+  @IsArray()
+  @ArrayMaxSize(QUEUE_MAX_ENTRIES)
+  @IsUUID('all', { each: true })
+  ids!: string[];
+}
+
+export class NewQueueItemDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(PRINT_NAME_MAX_LENGTH)
+  name!: string;
+
+  @IsOptional()
+  @IsUUID()
+  categoryId?: string | null;
+}
+
+// Concluir (ou falhar) um item: onde registrar e o registro em si. Um dos
+// dois destinos: printItemId (registro numa impressão existente) ou newItem
+// (cria a impressão). Na falha de uma peça nova não há onde registrar, então
+// só a fila fica sabendo.
+export class FinishQueueEntryDto {
+  @IsOptional()
+  @IsUUID()
+  printItemId?: string | null;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NewQueueItemDto)
+  newItem?: NewQueueItemDto | null;
+
+  @ValidateNested()
+  @Type(() => AddPrintRecordDto)
+  record!: AddPrintRecordDto;
+}

@@ -6,8 +6,17 @@ export type Category = {
   color: string;
 };
 
+// Quantidade de peças marcadas com a categoria.
+export type CategoryWithUsage = Category & { itemCount: number };
+
+export type CategorySummary = { uncategorizedItems: number };
+
 export async function listCategories() {
-  return (await apiFetch("/category")) as Category[];
+  return (await apiFetch("/category")) as CategoryWithUsage[];
+}
+
+export async function getCategorySummary() {
+  return (await apiFetch("/category/summary")) as CategorySummary;
 }
 
 export async function createCategory(name: string, color: string) {

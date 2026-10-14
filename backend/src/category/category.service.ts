@@ -48,14 +48,27 @@ export class CategoryService {
       where: {
         userId: userId,
       },
+      orderBy: { createdAt: 'asc' },
       select: {
         id: true,
         name: true,
         color: true,
+        _count: { select: { printItems: true } },
       },
     });
 
-    return categories;
+    return categories.map(({ _count, ...category }) => ({
+      ...category,
+      itemCount: _count.printItems,
+    }));
+  }
+
+  async getSummary(userId: string) {
+    const uncategorizedItems = await this.prisma.printItem.count({
+      where: { userId, categoryId: null },
+    });
+
+    return { uncategorizedItems };
   }
 
   async findCategoryById(id: string) {
