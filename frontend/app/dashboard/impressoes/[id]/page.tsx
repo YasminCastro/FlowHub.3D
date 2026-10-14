@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ChevronRight,
   GitBranch,
@@ -10,7 +10,7 @@ import {
   ListOrdered,
   Plus,
   Star,
-  Store,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -23,24 +23,31 @@ import {
   Stat,
   StatDivider,
 } from "@/components/prints/print-bits";
+import { PrintDeleteDialog } from "@/components/prints/print-delete-dialog";
+import { PrintRecordDeleteDialog } from "@/components/prints/print-record-delete-dialog";
 import { PrintRecordSheet } from "@/components/prints/print-record-sheet";
 import { PrintRecordsTable } from "@/components/prints/print-records-table";
 import {
   usePageHeaderAction,
   usePageHeaderBreadcrumb,
 } from "@/contexts/page-header-action-context";
+import { useCostContext } from "@/hooks/use-cost-context";
+import { ApiError } from "@/lib/api/auth";
 import { usePrintItem } from "@/hooks/use-print-item";
 import {
   PrintFilament,
   PrintOutcome,
+  PrintRecord,
   formatDuration,
   formatGrams,
   formatSettings,
   getDefaultRecord,
   getItemStats,
+  getLostCost,
   getPerUnit,
   listPrintFilaments,
   setDefaultPrintRecord,
+  modelHref,
   shortUrl,
 } from "@/lib/api/print";
 import { cn, formatBRL, formatDatePtBR } from "@/lib/utils";
@@ -84,21 +91,49 @@ function FilterChip({
 export default function PrintItemPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { item, setItem, isLoading, loadError } = usePrintItem(params.id);
+  const searchParams = useSearchParams();
+  const {
+    item,
+    setItem,
+    isLoading: isLoadingItem,
+    loadError: itemError,
+  } = usePrintItem(params.id);
+  const { costs, loadError: costsError } = useCostContext();
+  const isLoading = isLoadingItem || (!costs && !costsError);
+  const loadError = itemError ?? costsError;
   const [filaments, setFilaments] = useState<PrintFilament[]>([]);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [sheetBaseId, setSheetBaseId] = useState<string | null>(null);
+  // Com um id, o painel edita esse registro em vez de criar um novo.
+  const [sheetEditId, setSheetEditId] = useState<string | null>(null);
   const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>("all");
   const [showAll, setShowAll] = useState(false);
+  // Vindo da Nova impressão com ?fotos=erro: salvou, mas as fotos falharam.
+  const [actionError, setActionError] = useState<string | null>(() =>
+    searchParams.get("fotos") === "erro"
+      ? "A impressão foi salva, mas as fotos não foram enviadas."
+      : null,
+  );
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [recordToDelete, setRecordToDelete] = useState<PrintRecord | null>(
+    null,
+  );
   const [activePhoto, setActivePhoto] = useState(0);
 
   useEffect(() => {
-    listPrintFilaments().then(setFilaments);
-    // Recarrega os rolos depois de salvar um registro (o peso muda).
-  }, [item?.records.length]);
+    listPrintFilaments()
+      .then(setFilaments)
+      .catch(() => setFilaments([]));
+  }, []);
 
   function openSheet(baseId: string | null) {
     setSheetBaseId(baseId);
+    setSheetEditId(null);
+    setIsSheetOpen(true);
+  }
+
+  function openEdit(recordId: string) {
+    setSheetEditId(recordId);
     setIsSheetOpen(true);
   }
 
@@ -147,6 +182,14 @@ export default function PrintItemPage() {
           <Plus />
           Novo registro
         </Button>
+        <Button
+          variant="destructive"
+          size="icon-sm"
+          aria-label="Excluir impressão"
+          onClick={() => setIsDeleteDialogOpen(true)}
+        >
+          <Trash2 />
+        </Button>
       </>
     ) : null,
   );
@@ -166,7 +209,7 @@ export default function PrintItemPage() {
     );
   }
 
-  if (loadError || !item) {
+  if (loadError || !item || !costs) {
     return (
       <div className="flex flex-col gap-4 p-8">
         <p role="alert" className="text-[12.5px] text-destructive">
@@ -177,9 +220,10 @@ export default function PrintItemPage() {
   }
 
   const base = getDefaultRecord(item);
-  const perUnit = getPerUnit(base);
+  const perUnit = getPerUnit(base, costs);
   const stats = getItemStats(item);
-  const photos = item.records.flatMap((r) => r.photos);
+  const lostCost = getLostCost(item.records, costs);
+  const photos = item.records.flatMap((r) => r.photos.map((p) => p.src));
   const mainPhoto = photos[activePhoto] ?? photos[0];
 
   const filteredRecords = item.records.filter(
@@ -191,8 +235,16 @@ export default function PrintItemPage() {
   const hiddenCount = filteredRecords.length - visibleRecords.length;
 
   async function makeDefault(recordId: string) {
-    const updated = await setDefaultPrintRecord(item!.id, recordId);
-    setItem(updated);
+    setActionError(null);
+    try {
+      setItem(await setDefaultPrintRecord(item!.id, recordId));
+    } catch (err) {
+      setActionError(
+        err instanceof ApiError
+          ? err.message
+          : "Não foi possível trocar o registro padrão.",
+      );
+    }
   }
 
   return (
@@ -238,26 +290,24 @@ export default function PrintItemPage() {
 
         <div className="flex min-w-0 flex-col gap-4.5">
           <div className="flex flex-col gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-sm border border-border px-2 py-0.5 text-[11px] text-foreground/80">
-                <span
-                  className="size-2 rounded-[2px]"
-                  style={{ background: item.category.color }}
-                />
-                {item.category.name}
-              </span>
-              {item.catalogName && (
-                <span className="inline-flex items-center gap-1 rounded-sm bg-neutral-800 px-2 py-0.5 text-[11px] text-foreground/80">
-                  <Store className="size-2.75" aria-hidden="true" />
-                  No catálogo · {item.catalogName}
+            {item.category && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-sm border border-border px-2 py-0.5 text-[11px] text-foreground/80">
+                  {item.category.color && (
+                    <span
+                      className="size-2 rounded-[2px]"
+                      style={{ background: item.category.color }}
+                    />
+                  )}
+                  {item.category.name}
                 </span>
-              )}
-            </div>
+              </div>
+            )}
             <h1 className="text-4xl leading-tight font-bold">{item.name}</h1>
             <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[12.5px] text-muted-foreground">
               {item.modelUrl && (
                 <a
-                  href={item.modelUrl}
+                  href={modelHref(item.modelUrl)}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-1.5 text-brand-300 hover:underline"
@@ -313,9 +363,6 @@ export default function PrintItemPage() {
                 {base.filaments[0] &&
                   ` · ${base.filaments[0].filament.colorName.toLowerCase()}`}
               </span>
-              <span className="ml-auto text-[11.5px] text-muted-foreground/80">
-                Dá base ao custo, ao tempo e ao preço do catálogo
-              </span>
             </div>
             <div className="flex flex-wrap items-stretch gap-6">
               <Stat label="Por unidade" value={formatGrams(perUnit.grams)} />
@@ -330,13 +377,25 @@ export default function PrintItemPage() {
               <div className="flex min-w-0 flex-col gap-1.75">
                 <SectionLabel>Configuração</SectionLabel>
                 <div className="text-[12.5px] leading-normal text-foreground/72">
-                  {base.printer.name} · {base.settings.slicer} ·{" "}
-                  {formatSettings(base.settings).split(" · ")[0]}
-                  <br />
-                  {formatSettings(base.settings)
-                    .split(" · ")
-                    .slice(1)
-                    .join(" · ")}
+                  {base.settings ? (
+                    <>
+                      {base.printer.name} · {base.settings.slicer} ·{" "}
+                      {formatSettings(base.settings).split(" · ")[0]}
+                      <br />
+                      {formatSettings(base.settings)
+                        .split(" · ")
+                        .slice(1)
+                        .join(" · ")}
+                    </>
+                  ) : (
+                    <>
+                      {base.printer.name}
+                      <br />
+                      <span className="text-muted-foreground">
+                        Sem configuração do fatiador
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -351,9 +410,9 @@ export default function PrintItemPage() {
             <StatDivider />
             <Stat
               label="Perdido"
-              value={formatBRL(stats.lostCost)}
+              value={formatBRL(lostCost)}
               size="sm"
-              danger={stats.lostCost > 0}
+              danger={lostCost > 0}
             />
             <StatDivider />
             <div className="flex flex-col gap-1.75">
@@ -387,17 +446,26 @@ export default function PrintItemPage() {
           </span>
         </div>
 
+        {actionError && (
+          <p role="alert" className="text-[12.5px] text-destructive">
+            {actionError}
+          </p>
+        )}
+
         {visibleRecords.length ? (
           <PrintRecordsTable
+            costs={costs}
             records={visibleRecords}
             defaultRecordId={item.defaultRecordId}
             onMakeDefault={(record) => makeDefault(record.id)}
             onStartFrom={(record) => openSheet(record.id)}
+            onEdit={(record) => openEdit(record.id)}
             onDerive={(record) =>
               router.push(
                 `/dashboard/impressoes/new?derivadoDe=${item.id}&registro=${record.id}`,
               )
             }
+            onDelete={setRecordToDelete}
           />
         ) : (
           <p className="py-6 text-center text-[12.5px] text-muted-foreground">
@@ -418,13 +486,41 @@ export default function PrintItemPage() {
         )}
       </section>
 
+      <PrintDeleteDialog
+        item={item}
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        onDeleted={() => router.push("/dashboard/impressoes")}
+      />
+
+      <PrintRecordDeleteDialog
+        item={item}
+        record={recordToDelete}
+        open={recordToDelete != null}
+        onOpenChange={(open) => {
+          if (!open) setRecordToDelete(null);
+        }}
+        onDeleted={(updated) => {
+          setItem(updated);
+          setRecordToDelete(null);
+        }}
+      />
+
       <PrintRecordSheet
         item={item}
         open={isSheetOpen}
         onOpenChange={setIsSheetOpen}
         baseRecordId={sheetBaseId}
+        editRecordId={sheetEditId}
         filaments={filaments}
-        onSaved={setItem}
+        costs={costs}
+        onSaved={(updated, photoError) => {
+          setItem(updated);
+          setActionError(
+            photoError &&
+              `O registro foi salvo, mas as fotos não foram enviadas: ${photoError}`,
+          );
+        }}
       />
     </div>
   );

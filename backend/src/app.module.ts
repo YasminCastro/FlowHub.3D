@@ -16,6 +16,7 @@ import { FilamentModule } from './filament/filament.module.js';
 import { ExtraItemModule } from './extra-item/extra-item.module.js';
 import { JournalModule } from './journal/journal.module.js';
 import { CostSettingsModule } from './cost-settings/cost-settings.module.js';
+import { PrintModule } from './print/print.module.js';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { CostSettingsModule } from './cost-settings/cost-settings.module.js';
     ExtraItemModule,
     JournalModule,
     CostSettingsModule,
+    PrintModule,
   ],
   controllers: [AppController, UserController],
   providers: [

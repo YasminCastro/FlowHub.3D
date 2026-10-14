@@ -1,0 +1,6 @@
+-- AlterTable
+ALTER TABLE "PrintRecord" ALTER COLUMN "slicer" DROP NOT NULL,
+ALTER COLUMN "layerHeightMm" DROP NOT NULL,
+ALTER COLUMN "infillPercent" DROP NOT NULL,
+ALTER COLUMN "infillPattern" DROP NOT NULL,
+ALTER COLUMN "walls" DROP NOT NULL;

@@ -7,6 +7,7 @@ import {
   PhotoPlaceholder,
 } from "@/components/prints/print-bits";
 import {
+  CostContext,
   PrintItem,
   formatDuration,
   formatGrams,
@@ -18,12 +19,18 @@ import {
 import { formatBRL } from "@/lib/utils";
 
 // O card mostra o registro padrão: gramas, tempo e custo por unidade.
-export function PrintCard({ item }: { item: PrintItem }) {
+export function PrintCard({
+  item,
+  costs,
+}: {
+  item: PrintItem;
+  costs: CostContext;
+}) {
   const base = getDefaultRecord(item);
-  const perUnit = getPerUnit(base);
+  const perUnit = getPerUnit(base, costs);
   const stats = getItemStats(item);
   const types = [...new Set(base.filaments.map((u) => u.filament.type))];
-  const cover = item.records.find((r) => r.photos.length)?.photos[0];
+  const cover = item.records.find((r) => r.photos.length)?.photos[0]?.src;
 
   return (
     <Link

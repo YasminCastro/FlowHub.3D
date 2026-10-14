@@ -34,6 +34,7 @@ model User {
   extraItems ExtraItem[]
   journalEntries JournalEntry[]
   costSettings CostSettings?
+  printItems PrintItem[]
 }
 
 
@@ -45,6 +46,8 @@ model Category {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  printItems PrintItem[]
 
   @@unique([userId, name])
 }
@@ -69,6 +72,7 @@ model Printer {
   updatedAt DateTime @updatedAt
 
   maintenances PrinterMaintenance[]
+  printRecords PrintRecord[]
 
   @@unique([userId, name])
 }
@@ -195,6 +199,7 @@ model Filament {
 
   notes FilamentNote[]
   journalEntries JournalEntry[]
+  printUsages PrintRecordFilament[]
 
   @@unique([userId, brandId, type, colorName])
   @@index([brandId])
@@ -323,4 +328,105 @@ model CostSettings {
   user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
+}
+
+enum PrintOutcome {
+  SUCCESS
+  FAILURE
+}
+
+// Uma peça. Imprimir de novo acrescenta um registro dentro dela.
+model PrintItem {
+  id            String      @id @default(uuid())
+  name          String
+  modelUrl      String?
+  // SetNull: excluir a categoria deixa a peça "sem categoria".
+  categoryId    String?
+  category      Category?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  // Versão de outra peça (escala, base diferente...). Excluir a original não
+  // apaga a derivada.
+  derivedFromId String?
+  derivedFrom   PrintItem?  @relation("PrintItemDerivation", fields: [derivedFromId], references: [id], onDelete: SetNull)
+  derivatives   PrintItem[] @relation("PrintItemDerivation")
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  records PrintRecord[]
+
+  @@unique([userId, name])
+  @@index([categoryId])
+  @@index([derivedFromId])
+}
+
+// Uma vez em que a peça foi impressa. Exatamente um registro com sucesso por
+// peça é o padrão (isDefault), garantido pelo serviço.
+model PrintRecord {
+  id            String       @id @default(uuid())
+  printedAt     DateTime
+  units         Int
+  // Tempo da impressão inteira (todas as unidades). Na falha, até parar.
+  totalMinutes  Int
+  // SetNull: excluir a impressora não apaga o histórico; o nome fica.
+  printerId     String?
+  printer       Printer?     @relation(fields: [printerId], references: [id], onDelete: SetNull)
+  printerName   String
+  // Configuração do fatiador: opcional, tudo null quando não informada.
+  slicer        String?
+  layerHeightMm Float?
+  infillPercent Int?
+  infillPattern String?
+  walls         Int?
+  // Opcional: a Nova impressão não pede; o Novo registro aceita.
+  temperatureC  Int?
+  // Suporte, brim, velocidade e o resto, em texto livre.
+  extras        String       @default("")
+  outcome       PrintOutcome
+  failureReason String?
+  note          String?
+  // Texto da coluna "O que mudou", montado em relação ao registro de base.
+  changeSummary String?
+  isDefault     Boolean      @default(false)
+  itemId        String
+  item          PrintItem    @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  filaments PrintRecordFilament[]
+  photos    PrintPhoto[]
+
+  @@index([itemId, printedAt])
+  @@index([printerId])
+}
+
+// Filamento gasto num registro. Guarda o preço por grama e a identificação do
+// rolo daquele dia: o custo de uma impressão antiga não muda se o preço do
+// filamento mudar ou se ele for excluído.
+model PrintRecordFilament {
+  id           String      @id @default(uuid())
+  position     Int
+  grams        Float
+  pricePerGram Float
+  colorName    String
+  type         String
+  brandName    String
+  colors       String[]
+  filamentId   String?
+  filament     Filament?   @relation(fields: [filamentId], references: [id], onDelete: SetNull)
+  recordId     String
+  record       PrintRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  @@index([recordId, position])
+  @@index([filamentId])
+}
+
+model PrintPhoto {
+  id        String      @id @default(uuid())
+  filename  String      @unique
+  recordId  String
+  record    PrintRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+
+  @@index([recordId, createdAt])
 }

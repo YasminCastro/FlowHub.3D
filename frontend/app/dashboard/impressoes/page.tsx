@@ -26,10 +26,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PrintCard } from "@/components/prints/print-card";
 import { Stat, StatDivider } from "@/components/prints/print-bits";
 import { usePageHeaderAction } from "@/contexts/page-header-action-context";
+import { useCostContext } from "@/hooks/use-cost-context";
+import { ApiError } from "@/lib/api/auth";
 import {
   PrintItem,
-  computeCost,
   getItemStats,
+  getLostCost,
   listPrintItems,
 } from "@/lib/api/print";
 import { cn, formatBRL } from "@/lib/utils";
@@ -102,7 +104,11 @@ function hasRecentFailure(item: PrintItem, now: Date) {
 
 export default function PrintsPage() {
   const [items, setItems] = useState<PrintItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingItems, setIsLoadingItems] = useState(true);
+  const [itemsError, setItemsError] = useState<string | null>(null);
+  const { costs, loadError: costsError } = useCostContext();
+  const loadError = itemsError ?? costsError;
+  const isLoading = isLoadingItems || (!costs && !loadError);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState(ALL_CATEGORIES);
   const [onlyRecentFailure, setOnlyRecentFailure] = useState(false);
@@ -114,8 +120,16 @@ export default function PrintsPage() {
       .then((result) => {
         if (!ignore) setItems(result);
       })
+      .catch((err) => {
+        if (ignore) return;
+        setItemsError(
+          err instanceof ApiError
+            ? err.message
+            : "Não foi possível carregar as impressões.",
+        );
+      })
       .finally(() => {
-        if (!ignore) setIsLoading(false);
+        if (!ignore) setIsLoadingItems(false);
       });
     return () => {
       ignore = true;
@@ -146,7 +160,11 @@ export default function PrintsPage() {
 
   const now = new Date();
   const categories = [
-    ...new Map(items.map((item) => [item.category.id, item.category])).values(),
+    ...new Map(
+      items.flatMap((item) =>
+        item.category ? [[item.category.id, item.category] as const] : [],
+      ),
+    ).values(),
   ].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 
   const query = search.trim().toLowerCase();
@@ -155,7 +173,7 @@ export default function PrintsPage() {
     .filter(
       (item) =>
         categoryFilter === ALL_CATEGORIES ||
-        item.category.id === categoryFilter,
+        item.category?.id === categoryFilter,
     )
     .filter((item) => !onlyRecentFailure || hasRecentFailure(item, now))
     .sort((a, b) => compareItems(a, b, sort));
@@ -165,9 +183,7 @@ export default function PrintsPage() {
   const monthUnits = monthRecords
     .filter((r) => r.outcome === "SUCCESS")
     .reduce((sum, r) => sum + r.units, 0);
-  const lost = records
-    .filter((r) => r.outcome === "FAILURE")
-    .reduce((sum, r) => sum + computeCost(r).total, 0);
+  const lost = costs ? getLostCost(records, costs) : 0;
 
   const summaryStats = [
     { label: "Itens", value: String(items.length) },
@@ -184,6 +200,14 @@ export default function PrintsPage() {
             <Skeleton key={i} className="h-64 w-full" />
           ))}
         </div>
+      );
+    }
+
+    if (loadError || !costs) {
+      return (
+        <p role="alert" className="text-[12.5px] text-destructive">
+          {loadError}
+        </p>
       );
     }
 
@@ -221,7 +245,7 @@ export default function PrintsPage() {
     return (
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {visibleItems.map((item) => (
-          <PrintCard key={item.id} item={item} />
+          <PrintCard key={item.id} item={item} costs={costs} />
         ))}
       </div>
     );

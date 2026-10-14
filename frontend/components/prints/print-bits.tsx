@@ -189,3 +189,64 @@ export function OutcomeToggle({
     </div>
   );
 }
+
+// Tempo digitado em dois campos; vazio nos dois = não informado.
+export type DurationDraft = { hours: string; minutes: string };
+
+export const EMPTY_DURATION: DurationDraft = { hours: "", minutes: "" };
+
+export function minutesToDuration(total: number): DurationDraft {
+  const rounded = Math.max(0, Math.round(total));
+  return {
+    hours: String(Math.floor(rounded / 60)),
+    minutes: String(rounded % 60),
+  };
+}
+
+export function durationToMinutes(duration: DurationDraft) {
+  if (!duration.hours && !duration.minutes) return null;
+  return Number(duration.hours || 0) * 60 + Number(duration.minutes || 0);
+}
+
+/** Horas e minutos lado a lado; aceita só dígitos. */
+export function DurationInput({
+  id,
+  value,
+  onChange,
+  label,
+  className,
+}: {
+  id: string;
+  value: DurationDraft;
+  onChange: (next: DurationDraft) => void;
+  /** Nome do campo, para o leitor de tela dos dois inputs. */
+  label: string;
+  className?: string;
+}) {
+  const digits = (text: string) => text.replace(/\D/g, "").slice(0, 3);
+  return (
+    <div className={cn("grid grid-cols-2 gap-1.5", className)}>
+      <SuffixInput
+        id={id}
+        suffix="h"
+        inputMode="numeric"
+        placeholder="0"
+        aria-label={`${label}: horas`}
+        className="pr-6"
+        value={value.hours}
+        onChange={(e) => onChange({ ...value, hours: digits(e.target.value) })}
+      />
+      <SuffixInput
+        suffix="min"
+        inputMode="numeric"
+        placeholder="0"
+        aria-label={`${label}: minutos`}
+        className="pr-9"
+        value={value.minutes}
+        onChange={(e) =>
+          onChange({ ...value, minutes: digits(e.target.value).slice(0, 2) })
+        }
+      />
+    </div>
+  );
+}

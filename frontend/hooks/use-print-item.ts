@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { ApiError } from "@/lib/api/auth";
 import { PrintItem, getPrintItem } from "@/lib/api/print";
 
 export function usePrintItem(id: string) {
@@ -19,7 +20,7 @@ export function usePrintItem(id: string) {
       } catch (err) {
         if (!ignore) {
           setLoadError(
-            err instanceof Error
+            err instanceof ApiError
               ? err.message
               : "Não foi possível carregar a impressão.",
           );

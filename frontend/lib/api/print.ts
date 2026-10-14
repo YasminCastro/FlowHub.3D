@@ -1,16 +1,24 @@
 // Impressões: cada peça é um item, e imprimir de novo acrescenta um registro
 // dentro dele. Um dos registros é o padrão, que dá base ao custo, ao tempo e
 // ao preço do catálogo.
-//
-// Provisório: ainda sem backend. Os dados vivem em memória (mock) e somem ao
-// recarregar a página; as funções já são assíncronas para trocar por
-// apiFetch depois sem mexer nas telas.
+
+import { ApiError, apiFetch } from "./client";
+import type { CostSettings } from "./cost-settings";
+import {
+  Filament,
+  SPOOL_LEVEL_LABELS,
+  SpoolLevel,
+  isInStock,
+  listFilaments,
+} from "./filament";
+import type { Printer } from "./printer";
 
 export type PrintOutcome = "SUCCESS" | "FAILURE";
 
-export type PrintCategory = { id: string; name: string; color: string };
+export type PrintCategory = { id: string; name: string; color: string | null };
 
-export type PrintPrinter = { id: string; name: string };
+// id null: a impressora foi excluída; o nome é o do dia do registro.
+export type PrintPrinter = { id: string | null; name: string };
 
 export type PrintFilament = {
   id: string;
@@ -19,11 +27,26 @@ export type PrintFilament = {
   brandName: string;
   colors: string[];
   pricePerGram: number;
-  // Quanto sobra no rolo agora; o registro desconta daqui ao salvar.
-  remainingGrams: number;
+  // Marcado à mão no filamento; o consumo ainda não desconta do rolo.
+  spoolLevel: SpoolLevel;
 };
 
-export type PrintFilamentUsage = { filament: PrintFilament; grams: number };
+// Num registro, o filamento guarda o preço e o nome do dia. Se ele foi
+// excluído depois, o id vira este marcador e o nível, "Acabou".
+const DELETED_FILAMENT_PREFIX = "excluido:";
+
+export function isDeletedFilament(filament: Pick<PrintFilament, "id">) {
+  return filament.id.startsWith(DELETED_FILAMENT_PREFIX);
+}
+
+export type PrintFilamentUsage = {
+  filament: PrintFilament;
+  grams: number;
+  // Id do uso no registro salvo; na edição, mantém um filamento excluído.
+  usageId?: string;
+};
+
+export type PrintPhoto = { id: string; src: string };
 
 export type SlicerSettings = {
   slicer: string;
@@ -31,7 +54,8 @@ export type SlicerSettings = {
   infillPercent: number;
   infillPattern: string;
   walls: number;
-  temperatureC: number;
+  // Opcional: a Nova impressão não pede.
+  temperatureC: number | null;
   // Suporte, brim, velocidade e o resto, em texto livre.
   extras: string;
 };
@@ -44,13 +68,15 @@ export type PrintRecord = {
   units: number;
   // Tempo da impressão inteira (todas as unidades). Na falha, até parar.
   totalMinutes: number;
-  settings: SlicerSettings;
+  // null: registro sem configuração do fatiador (é opcional).
+  settings: SlicerSettings | null;
   outcome: PrintOutcome;
   failureReason: string | null;
   note: string | null;
   // Texto da coluna "O que mudou", montado a partir do registro de base.
   changeSummary: string | null;
-  photos: string[];
+  // src pronto para o <img>.
+  photos: PrintPhoto[];
 };
 
 export type PrintItemRef = { id: string; name: string };
@@ -58,33 +84,30 @@ export type PrintItemRef = { id: string; name: string };
 export type PrintItem = {
   id: string;
   name: string;
-  category: PrintCategory;
+  // null: sem categoria (ou a categoria foi excluída).
+  category: PrintCategory | null;
   modelUrl: string | null;
   derivedFrom: PrintItemRef | null;
   derivatives: PrintItemRef[];
-  // Nome do kit/anúncio no catálogo; null quando não está à venda.
-  catalogName: string | null;
   defaultRecordId: string;
   // Do mais recente para o mais antigo.
   records: PrintRecord[];
 };
 
-export type PrintRecordInput = Omit<PrintRecord, "id">;
+// O que as telas montam; vira o corpo da requisição em toRecordPayload.
+export type PrintRecordInput = Omit<PrintRecord, "id" | "photos">;
 
 export type PrintItemInput = {
   name: string;
-  categoryId: string;
+  categoryId: string | null;
   modelUrl: string | null;
   derivedFromId: string | null;
   firstRecord: PrintRecordInput;
 };
 
-// Taxas por hora de impressão. Virão de "Custos e energia".
-export const COST_RATES = {
-  energyPerHour: 0.1,
-  printerPerHour: 0.34,
-  laborPerHour: 1.06,
-};
+// Mesmos limites do backend.
+export const PRINT_MAX_PHOTOS = 12;
+export const PRINT_PHOTO_MAX_BYTES = 10 * 1024 * 1024;
 
 export const FAILURE_REASONS = [
   "Descolou da mesa",
@@ -95,479 +118,383 @@ export const FAILURE_REASONS = [
 
 export const SLICERS = ["Orca", "Bambu Studio", "Cura", "PrusaSlicer"];
 
-export const INFILL_PATTERNS = ["giroide", "grade", "cúbico", "linhas"];
-
-// ---------------------------------------------------------------------------
-// Mock
-
-export const MOCK_CATEGORIES: PrintCategory[] = [
-  { id: "cat-chaveiros", name: "Chaveiros", color: "#e08a2e" },
-  { id: "cat-decoracao", name: "Decoração", color: "#5cc7b8" },
-  { id: "cat-home-office", name: "Home Office", color: "#9184d9" },
-  { id: "cat-cozinha", name: "Cozinha", color: "#d98a78" },
-];
-
-export const MOCK_PRINTERS: PrintPrinter[] = [
-  { id: "prn-a1", name: "Bambu A1" },
-  { id: "prn-ender", name: "Ender 3 V3" },
-];
-
-export const MOCK_FILAMENTS: PrintFilament[] = [
-  {
-    id: "fil-rosa",
-    colorName: "Rosa",
-    type: "PLA",
-    brandName: "Voolt",
-    colors: ["#e89ab0"],
-    pricePerGram: 0.09,
-    remainingGrams: 585,
-  },
-  {
-    id: "fil-azul",
-    colorName: "Azul",
-    type: "PLA",
-    brandName: "Voolt",
-    colors: ["#3f7fd6"],
-    pricePerGram: 0.09,
-    remainingGrams: 480,
-  },
-  {
-    id: "fil-branco",
-    colorName: "Branco",
-    type: "PLA",
-    brandName: "Voolt",
-    colors: ["#e9e9ed"],
-    pricePerGram: 0.085,
-    remainingGrams: 720,
-  },
-  {
-    id: "fil-preto",
-    colorName: "Preto",
-    type: "PLA",
-    brandName: "3D Fila",
-    colors: ["#2b2b33"],
-    pricePerGram: 0.08,
-    remainingGrams: 310,
-  },
-  {
-    id: "fil-dourado",
-    colorName: "Dourado",
-    type: "PLA Silk",
-    brandName: "Voolt",
-    colors: ["#c9a24a", "#e6c48f"],
-    pricePerGram: 0.12,
-    remainingGrams: 640,
-  },
-  {
-    id: "fil-preto-petg",
-    colorName: "Preto",
-    type: "PETG",
-    brandName: "3D Fila",
-    colors: ["#2b2b33"],
-    pricePerGram: 0.11,
-    remainingGrams: 890,
-  },
-];
-
-function filament(id: string) {
-  return MOCK_FILAMENTS.find((f) => f.id === id)!;
-}
-
-function printer(id: string) {
-  return MOCK_PRINTERS.find((p) => p.id === id)!;
-}
-
-function category(id: string) {
-  return MOCK_CATEGORIES.find((c) => c.id === id)!;
-}
-
-const BASE_SETTINGS: SlicerSettings = {
+// Ponto de partida quando o usuário abre a configuração do fatiador.
+export const DEFAULT_SLICER_SETTINGS: SlicerSettings = {
   slicer: "Orca",
   layerHeightMm: 0.2,
   infillPercent: 15,
   infillPattern: "giroide",
   walls: 2,
-  temperatureC: 215,
+  temperatureC: null,
   extras: "",
 };
 
-function record(
-  id: string,
-  fields: Partial<PrintRecord> &
-    Pick<PrintRecord, "printedAt" | "filaments" | "units" | "totalMinutes">,
-): PrintRecord {
+export const INFILL_PATTERNS = ["giroide", "grade", "cúbico", "linhas"];
+
+// ---------------------------------------------------------------------------
+// API
+
+type PrintRecordResponse = Omit<PrintRecord, "filaments" | "photos"> & {
+  filaments: {
+    id: string;
+    grams: number;
+    filament: Omit<PrintFilament, "id" | "spoolLevel"> & {
+      id: string | null;
+      spoolLevel: SpoolLevel | null;
+    };
+  }[];
+  photos: { id: string; url: string }[];
+};
+
+type PrintItemResponse = Omit<PrintItem, "records" | "defaultRecordId"> & {
+  defaultRecordId: string | null;
+  records: PrintRecordResponse[];
+};
+
+type ItemResponse = { message: string; data: PrintItemResponse };
+
+export function printPhotoSrc(url: string) {
+  return `${process.env.NEXT_PUBLIC_API_URL}${url}`;
+}
+
+function fromRecordResponse(record: PrintRecordResponse): PrintRecord {
   return {
-    id,
-    printer: printer("prn-a1"),
-    settings: BASE_SETTINGS,
-    outcome: "SUCCESS",
-    failureReason: null,
-    note: null,
-    changeSummary: null,
-    photos: [],
-    ...fields,
+    ...record,
+    filaments: record.filaments.map((usage) => ({
+      usageId: usage.id,
+      grams: usage.grams,
+      filament: {
+        ...usage.filament,
+        id: usage.filament.id ?? `${DELETED_FILAMENT_PREFIX}${usage.id}`,
+        spoolLevel: usage.filament.spoolLevel ?? "FINISHED",
+      },
+    })),
+    photos: record.photos.map((photo) => ({
+      id: photo.id,
+      src: printPhotoSrc(photo.url),
+    })),
   };
 }
 
-function iso(date: string) {
-  return new Date(`${date}T12:00:00`).toISOString();
+function fromItemResponse(item: PrintItemResponse): PrintItem {
+  const records = item.records.map(fromRecordResponse);
+  return {
+    ...item,
+    records,
+    defaultRecordId: item.defaultRecordId ?? records[0]?.id ?? "",
+  };
 }
 
-let mockItems: PrintItem[] = [
-  {
-    id: "chaveiro-porco",
-    name: "Chaveiro de porco",
-    category: category("cat-chaveiros"),
-    modelUrl: "https://makerworld.com/models/porquinho",
-    derivedFrom: null,
-    derivatives: [],
-    catalogName: "Kit bichinhos",
-    defaultRecordId: "porco-4",
-    records: [
-      record("porco-1", {
-        printedAt: iso("2026-10-11"),
-        filaments: [{ filament: filament("fil-azul"), grams: 37 }],
-        units: 4,
-        totalMinutes: 168,
-        note: "Pedido da Ana",
-        changeSummary: "mesma config.",
-      }),
-      record("porco-2", {
-        printedAt: iso("2026-10-03"),
-        printer: printer("prn-ender"),
-        filaments: [{ filament: filament("fil-preto"), grams: 6 }],
-        units: 2,
-        totalMinutes: 9,
-        outcome: "FAILURE",
-        failureReason: "Descolou da mesa na 3ª camada",
-      }),
-      record("porco-3", {
-        printedAt: iso("2026-09-28"),
-        filaments: [{ filament: filament("fil-branco"), grams: 52 }],
-        units: 6,
-        totalMinutes: 228,
-        settings: { ...BASE_SETTINGS, infillPercent: 10 },
-        changeSummary: "Infill 15% → 10%",
-      }),
-      record("porco-4", {
-        printedAt: iso("2026-09-12"),
-        filaments: [{ filament: filament("fil-rosa"), grams: 27 }],
-        units: 3,
-        totalMinutes: 126,
-        changeSummary: "2 paredes",
-      }),
-      record("porco-5", {
-        printedAt: iso("2026-08-30"),
-        filaments: [{ filament: filament("fil-rosa"), grams: 10 }],
-        units: 1,
-        totalMinutes: 44,
-        settings: { ...BASE_SETTINGS, walls: 3 },
-        changeSummary: "Primeira impressão",
-      }),
-      ...[
-        ["2026-08-22", "fil-branco", 2],
-        ["2026-08-15", "fil-rosa", 3],
-        ["2026-08-09", "fil-preto", 1],
-        ["2026-08-02", "fil-azul", 2],
-      ].map(([date, filamentId, units], index) =>
-        record(`porco-old-${index}`, {
-          printedAt: iso(date as string),
-          filaments: [
-            {
-              filament: filament(filamentId as string),
-              grams: 9 * (units as number),
-            },
-          ],
-          units: units as number,
-          totalMinutes: 42 * (units as number),
-          changeSummary: "mesma config.",
-        }),
-      ),
-    ],
-  },
-  {
-    id: "vaso-hexagonal",
-    name: "Vaso hexagonal",
-    category: category("cat-decoracao"),
-    modelUrl: "https://printables.com/model/vaso-hex",
-    derivedFrom: null,
-    derivatives: [{ id: "vaso-hexagonal-g", name: "Vaso hexagonal G" }],
-    catalogName: "Vasos geométricos",
-    defaultRecordId: "vaso-3",
-    records: [
-      record("vaso-1", {
-        printedAt: iso("2026-10-07"),
-        printer: printer("prn-ender"),
-        filaments: [{ filament: filament("fil-dourado"), grams: 131 }],
-        units: 1,
-        totalMinutes: 318,
-        changeSummary: "PLA Silk Dourado",
-      }),
-      record("vaso-2", {
-        printedAt: iso("2026-09-20"),
-        printer: printer("prn-ender"),
-        filaments: [{ filament: filament("fil-branco"), grams: 40 }],
-        units: 1,
-        totalMinutes: 95,
-        outcome: "FAILURE",
-        failureReason: "Entupiu no meio",
-      }),
-      record("vaso-3", {
-        printedAt: iso("2026-09-02"),
-        printer: printer("prn-ender"),
-        filaments: [{ filament: filament("fil-branco"), grams: 128 }],
-        units: 1,
-        totalMinutes: 312,
-        settings: { ...BASE_SETTINGS, infillPercent: 0, walls: 3 },
-        changeSummary: "Modo vaso",
-      }),
-    ],
-  },
-  {
-    id: "vaso-hexagonal-g",
-    name: "Vaso hexagonal G",
-    category: category("cat-decoracao"),
-    modelUrl: null,
-    derivedFrom: { id: "vaso-hexagonal", name: "Vaso hexagonal" },
-    derivatives: [],
-    catalogName: null,
-    defaultRecordId: "vaso-g-2",
-    records: [
-      record("vaso-g-1", {
-        printedAt: iso("2026-10-04"),
-        printer: printer("prn-ender"),
-        filaments: [{ filament: filament("fil-azul"), grams: 178 }],
-        units: 1,
-        totalMinutes: 430,
-        changeSummary: "mesma config.",
-      }),
-      record("vaso-g-2", {
-        printedAt: iso("2026-09-25"),
-        printer: printer("prn-ender"),
-        filaments: [{ filament: filament("fil-azul"), grams: 176 }],
-        units: 1,
-        totalMinutes: 426,
-        settings: { ...BASE_SETTINGS, infillPercent: 0, walls: 3 },
-        changeSummary: "Escala 140%",
-      }),
-    ],
-  },
-  {
-    id: "suporte-fone",
-    name: "Suporte de fone",
-    category: category("cat-home-office"),
-    modelUrl: "https://makerworld.com/models/headphone-stand",
-    derivedFrom: null,
-    derivatives: [],
-    catalogName: null,
-    defaultRecordId: "fone-3",
-    records: [
-      record("fone-1", {
-        printedAt: iso("2026-10-01"),
-        filaments: [{ filament: filament("fil-preto-petg"), grams: 22 }],
-        units: 1,
-        totalMinutes: 51,
-        settings: { ...BASE_SETTINGS, temperatureC: 240 },
-        outcome: "FAILURE",
-        failureReason: "Camada deslocada",
-      }),
-      record("fone-2", {
-        printedAt: iso("2026-09-24"),
-        filaments: [{ filament: filament("fil-preto-petg"), grams: 15 }],
-        units: 1,
-        totalMinutes: 30,
-        settings: { ...BASE_SETTINGS, temperatureC: 240 },
-        outcome: "FAILURE",
-        failureReason: "Descolou da mesa",
-      }),
-      ...[0, 1, 2, 3, 4, 5].map((index) =>
-        record(`fone-${index + 3}`, {
-          printedAt: iso(`2026-09-${String(20 - index * 3).padStart(2, "0")}`),
-          filaments: [{ filament: filament("fil-preto-petg"), grams: 64 }],
-          units: 1,
-          totalMinutes: 150,
-          settings: { ...BASE_SETTINGS, temperatureC: 240, walls: 3 },
-          changeSummary: index === 5 ? "Primeira impressão" : "mesma config.",
-        }),
-      ),
-    ],
-  },
-  {
-    id: "porta-temperos",
-    name: "Porta-temperos",
-    category: category("cat-cozinha"),
-    modelUrl: null,
-    derivedFrom: null,
-    derivatives: [],
-    catalogName: "Organização de cozinha",
-    defaultRecordId: "temperos-1",
-    records: [
-      record("temperos-1", {
-        printedAt: iso("2026-09-15"),
-        filaments: [
-          { filament: filament("fil-branco"), grams: 84 },
-          { filament: filament("fil-dourado"), grams: 12 },
-        ],
-        units: 2,
-        totalMinutes: 236,
-        changeSummary: "Primeira impressão",
-      }),
-    ],
-  },
-];
-
-function delay<T>(value: T, ms = 250): Promise<T> {
-  return new Promise((resolve) =>
-    setTimeout(() => resolve(structuredClone(value)), ms),
-  );
-}
-
-let nextId = 1;
-function newId(prefix: string) {
-  return `${prefix}-${Date.now().toString(36)}-${nextId++}`;
-}
-
-// Desconta o filamento gasto dos rolos (inclusive na falha).
-function consumeFilament(input: PrintRecordInput) {
-  for (const usage of input.filaments) {
-    const spool = MOCK_FILAMENTS.find((f) => f.id === usage.filament.id);
-    if (spool) {
-      spool.remainingGrams = Math.max(0, spool.remainingGrams - usage.grams);
-    }
-  }
+function toRecordPayload(input: PrintRecordInput) {
+  if (!input.printer.id) throw new Error("Escolha a impressora.");
+  return {
+    printedAt: input.printedAt,
+    printerId: input.printer.id,
+    // Filamento excluído só fica pelo uso que o registro já tinha.
+    filaments: input.filaments.map((usage) => ({
+      ...(isDeletedFilament(usage.filament)
+        ? {
+            usageId:
+              usage.usageId ??
+              usage.filament.id.slice(DELETED_FILAMENT_PREFIX.length),
+          }
+        : { filamentId: usage.filament.id }),
+      grams: Math.round(usage.grams * 100) / 100,
+    })),
+    units: input.units,
+    totalMinutes: Math.round(input.totalMinutes),
+    settings: input.settings,
+    outcome: input.outcome,
+    failureReason: input.failureReason,
+    note: input.note,
+    changeSummary: input.changeSummary,
+  };
 }
 
 export async function listPrintItems() {
-  return delay(mockItems);
+  const items = (await apiFetch("/print")) as PrintItemResponse[];
+  return items.map(fromItemResponse);
 }
 
 export async function getPrintItem(id: string) {
-  const item = mockItems.find((i) => i.id === id);
-  if (!item) throw new Error("Impressão não encontrada.");
-  return delay(item);
+  return fromItemResponse(
+    (await apiFetch(`/print/${id}`)) as PrintItemResponse,
+  );
 }
 
-export async function listPrintFilaments() {
-  return delay(MOCK_FILAMENTS, 0);
+// As fotos vão numa requisição à parte (multipart), depois do registro.
+async function addRecordPhotos(
+  itemId: string,
+  recordId: string,
+  files: File[],
+) {
+  const body = new FormData();
+  files.forEach((file) => body.append("photos", file));
+  const data = (await apiFetch(`/print/${itemId}/records/${recordId}/photos`, {
+    method: "POST",
+    body,
+  })) as ItemResponse;
+  return fromItemResponse(data.data);
 }
 
-export async function createPrintItem(input: PrintItemInput) {
-  const derivedFrom = input.derivedFromId
-    ? (mockItems.find((i) => i.id === input.derivedFromId) ?? null)
-    : null;
-  const firstRecord: PrintRecord = {
-    ...input.firstRecord,
-    id: newId("rec"),
-  };
-  const item: PrintItem = {
-    id: newId("item"),
-    name: input.name,
-    category: category(input.categoryId),
-    modelUrl: input.modelUrl,
-    derivedFrom: derivedFrom
-      ? { id: derivedFrom.id, name: derivedFrom.name }
-      : null,
-    derivatives: [],
-    catalogName: null,
-    defaultRecordId: firstRecord.id,
-    records: [firstRecord],
-  };
-  consumeFilament(input.firstRecord);
-  mockItems = [
-    item,
-    ...mockItems.map((i) =>
-      i.id === derivedFrom?.id
-        ? {
-            ...i,
-            derivatives: [...i.derivatives, { id: item.id, name: item.name }],
-          }
-        : i,
-    ),
-  ];
-  return delay(item);
+// Resultado de salvar com fotos. As fotos vão depois do registro; se só elas
+// falharem, o registro já está salvo e o erro vem à parte em vez de lançar
+// (salvar de novo duplicaria o registro).
+export type SavedPrint = { item: PrintItem; photoError: string | null };
+
+async function withPhotos(
+  item: PrintItem,
+  recordId: string,
+  photos: File[],
+): Promise<SavedPrint> {
+  if (!photos.length) return { item, photoError: null };
+  try {
+    return {
+      item: await addRecordPhotos(item.id, recordId, photos),
+      photoError: null,
+    };
+  } catch (err) {
+    return {
+      item,
+      photoError:
+        err instanceof ApiError
+          ? err.message
+          : "Não foi possível enviar as fotos.",
+    };
+  }
+}
+
+export async function createPrintItem(input: PrintItemInput, photos: File[]) {
+  const data = (await apiFetch("/print", {
+    method: "POST",
+    body: JSON.stringify({
+      ...input,
+      firstRecord: toRecordPayload(input.firstRecord),
+    }),
+  })) as ItemResponse;
+  const item = fromItemResponse(data.data);
+  return withPhotos(item, item.defaultRecordId, photos);
 }
 
 export async function addPrintRecord(
   itemId: string,
   input: PrintRecordInput,
   options: { makeDefault: boolean },
+  photos: File[],
 ) {
-  const created: PrintRecord = { ...input, id: newId("rec") };
-  consumeFilament(input);
-  let updated: PrintItem | undefined;
-  mockItems = mockItems.map((item) => {
-    if (item.id !== itemId) return item;
-    updated = {
-      ...item,
-      records: [created, ...item.records].sort((a, b) =>
-        b.printedAt.localeCompare(a.printedAt),
-      ),
-      defaultRecordId:
-        options.makeDefault && created.outcome === "SUCCESS"
-          ? created.id
-          : item.defaultRecordId,
+  const data = (await apiFetch(`/print/${itemId}/records`, {
+    method: "POST",
+    body: JSON.stringify({
+      ...toRecordPayload(input),
+      makeDefault: options.makeDefault,
+    }),
+  })) as ItemResponse & { recordId: string };
+  return withPhotos(fromItemResponse(data.data), data.recordId, photos);
+}
+
+// Reenvia o registro inteiro; o "O que mudou" fica como estava. Depois tira
+// as fotos removidas e manda as novas.
+export async function updatePrintRecord(
+  itemId: string,
+  recordId: string,
+  input: PrintRecordInput,
+  options: { makeDefault: boolean },
+  photos: { add: File[]; removeIds: string[] },
+): Promise<SavedPrint> {
+  const data = (await apiFetch(`/print/${itemId}/records/${recordId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      ...toRecordPayload(input),
+      changeSummary: undefined,
+      makeDefault: options.makeDefault,
+    }),
+  })) as ItemResponse;
+  let item = fromItemResponse(data.data);
+  try {
+    for (const photoId of photos.removeIds) {
+      const removed = (await apiFetch(
+        `/print/${itemId}/records/${recordId}/photos/${photoId}`,
+        { method: "DELETE" },
+      )) as ItemResponse;
+      item = fromItemResponse(removed.data);
+    }
+  } catch (err) {
+    return {
+      item,
+      photoError:
+        err instanceof ApiError
+          ? err.message
+          : "Não foi possível remover as fotos.",
     };
-    return updated;
-  });
-  if (!updated) throw new Error("Impressão não encontrada.");
-  return delay(updated);
+  }
+  return withPhotos(item, recordId, photos.add);
 }
 
 export async function setDefaultPrintRecord(itemId: string, recordId: string) {
-  let updated: PrintItem | undefined;
-  mockItems = mockItems.map((item) => {
-    if (item.id !== itemId) return item;
-    updated = { ...item, defaultRecordId: recordId };
-    return updated;
-  });
-  if (!updated) throw new Error("Impressão não encontrada.");
-  return delay(updated, 100);
+  const data = (await apiFetch(`/print/${itemId}/records/${recordId}/default`, {
+    method: "PATCH",
+  })) as ItemResponse;
+  return fromItemResponse(data.data);
+}
+
+export async function deletePrintRecord(itemId: string, recordId: string) {
+  const data = (await apiFetch(`/print/${itemId}/records/${recordId}`, {
+    method: "DELETE",
+  })) as ItemResponse;
+  return fromItemResponse(data.data);
+}
+
+export async function deletePrintItem(id: string) {
+  await apiFetch(`/print/${id}`, { method: "DELETE" });
+}
+
+// Preço por grama: média do que já foi pago pelo rolo, dividida pelo peso.
+export function toPrintFilament(filament: Filament): PrintFilament {
+  const paid =
+    (filament.minPricePaid + (filament.maxPricePaid ?? filament.minPricePaid)) /
+    2;
+  return {
+    id: filament.id,
+    colorName: filament.colorName,
+    type: filament.type,
+    brandName: filament.brand.name,
+    colors: filament.colors,
+    pricePerGram:
+      filament.spoolWeightGrams > 0 ? paid / filament.spoolWeightGrams : 0,
+    spoolLevel: filament.spoolLevel,
+  };
+}
+
+// Só os rolos que ainda têm filamento; os acabados não aparecem para escolher.
+export async function listPrintFilaments() {
+  const filaments = await listFilaments();
+  return filaments
+    .filter(isInStock)
+    .map(toPrintFilament)
+    .sort((a, b) =>
+      describePrintFilament(a).localeCompare(describePrintFilament(b), "pt-BR"),
+    );
+}
+
+export function describeSpoolLevel(filament: PrintFilament) {
+  return SPOOL_LEVEL_LABELS[filament.spoolLevel];
 }
 
 // ---------------------------------------------------------------------------
 // Cálculos
 
+// O que o custo precisa além do registro: os parâmetros de "Custos e
+// energia" e as impressoras (consumo, tarifa própria e manutenção).
+export type CostContext = { settings: CostSettings; printers: Printer[] };
+
+// Mão de obra e margem não entram: vão para o preço sugerido, no Catálogo.
 export type CostBreakdown = {
   filament: number;
   energy: number;
-  printer: number;
-  labor: number;
+  maintenance: number;
+  packaging: number;
+  other: number;
+  failureReserve: number;
   total: number;
 };
+
+type CostInput = Pick<
+  PrintRecord,
+  "filaments" | "totalMinutes" | "units" | "outcome"
+> & { printer: Pick<PrintPrinter, "id"> };
 
 export function getRecordGrams(record: Pick<PrintRecord, "filaments">) {
   return record.filaments.reduce((sum, usage) => sum + usage.grams, 0);
 }
 
+export function findCostPrinter(ctx: CostContext, printerId: string | null) {
+  return ctx.printers.find((p) => p.id === printerId) ?? null;
+}
+
+/** Sem consumo ou sem manutenção, a parte da impressora fica de fora. */
+export function getMissingPrinterCosts(printer: Printer | null) {
+  if (!printer) return ["impressora"];
+  const missing: string[] = [];
+  if (printer.powerConsumptionW == null) missing.push("consumo");
+  if (printer.maintenanceCostPerHour == null) missing.push("manutenção");
+  return missing;
+}
+
 export function computeCost(
-  record: Pick<PrintRecord, "filaments" | "totalMinutes">,
+  record: CostInput,
+  ctx: CostContext,
 ): CostBreakdown {
   const hours = record.totalMinutes / 60;
-  const filamentCost = record.filaments.reduce(
+  const printer = findCostPrinter(ctx, record.printer.id);
+  // Tarifa própria da impressora; sem ela, a global.
+  const tariff = printer?.energyCostPerKwh ?? ctx.settings.energyCostPerKwh;
+
+  const filament = record.filaments.reduce(
     (sum, usage) => sum + usage.grams * usage.filament.pricePerGram,
     0,
   );
-  const energy = hours * COST_RATES.energyPerHour;
-  const printerCost = hours * COST_RATES.printerPerHour;
-  const labor = hours * COST_RATES.laborPerHour;
+  const energy = hours * ((printer?.powerConsumptionW ?? 0) / 1000) * tariff;
+  const maintenance = hours * (printer?.maintenanceCostPerHour ?? 0);
+  const production = filament + energy + maintenance;
+
+  // Na falha conta só o que foi gasto até parar: embalagem e custos fixos
+  // são das peças que saem, e a reserva existe justamente para cobrir isso.
+  if (record.outcome === "FAILURE") {
+    return {
+      filament,
+      energy,
+      maintenance,
+      packaging: 0,
+      other: 0,
+      failureReserve: 0,
+      total: production,
+    };
+  }
+
+  const units = Math.max(1, record.units);
+  const packaging = ctx.settings.packagingCost * units;
+  const other = ctx.settings.otherFixedCost * units;
+  const failureReserve =
+    (production * ctx.settings.failureReservePercent) / 100;
   return {
-    filament: filamentCost,
+    filament,
     energy,
-    printer: printerCost,
-    labor,
-    total: filamentCost + energy + printerCost + labor,
+    maintenance,
+    packaging,
+    other,
+    failureReserve,
+    total: production + packaging + other + failureReserve,
   };
 }
 
 export function divideCost(cost: CostBreakdown, units: number): CostBreakdown {
   const n = Math.max(1, units);
-  return {
-    filament: cost.filament / n,
-    energy: cost.energy / n,
-    printer: cost.printer / n,
-    labor: cost.labor / n,
-    total: cost.total / n,
-  };
+  return Object.fromEntries(
+    Object.entries(cost).map(([key, value]) => [key, value / n]),
+  ) as CostBreakdown;
+}
+
+/** Linhas do detalhamento do custo, sem as que deram zero por não se aplicarem. */
+export function costRows(cost: CostBreakdown, ctx: CostContext) {
+  const rows: [string, number][] = [
+    ["Filamento", cost.filament],
+    ["Energia", cost.energy],
+    ["Manutenção", cost.maintenance],
+    ["Embalagem", cost.packaging],
+    ["Outros", cost.other],
+    [
+      `Reserva p/ falhas (${formatDecimal(ctx.settings.failureReservePercent)}%)`,
+      cost.failureReserve,
+    ],
+  ];
+  // Filamento, energia e manutenção sempre aparecem, mesmo zerados.
+  return rows.filter(([, value], index) => index < 3 || value > 0);
+}
+
+export function getLostCost(records: PrintRecord[], ctx: CostContext) {
+  return records
+    .filter((r) => r.outcome === "FAILURE")
+    .reduce((sum, r) => sum + computeCost(r, ctx).total, 0);
 }
 
 export function getDefaultRecord(item: PrintItem) {
@@ -576,12 +503,12 @@ export function getDefaultRecord(item: PrintItem) {
   );
 }
 
-export function getPerUnit(record: PrintRecord) {
+export function getPerUnit(record: PrintRecord, ctx: CostContext) {
   const units = Math.max(1, record.units);
   return {
     grams: getRecordGrams(record) / units,
     minutes: record.totalMinutes / units,
-    cost: computeCost(record).total / units,
+    cost: computeCost(record, ctx).total / units,
   };
 }
 
@@ -589,7 +516,6 @@ export type PrintItemStats = {
   recordCount: number;
   units: number;
   failures: number;
-  lostCost: number;
   // Primeira cor de cada filamento já usado com sucesso, sem repetir.
   colors: string[][];
   lastPrintedAt: string | null;
@@ -609,7 +535,6 @@ export function getItemStats(item: PrintItem): PrintItemStats {
     recordCount: item.records.length,
     units: successes.reduce((sum, r) => sum + r.units, 0),
     failures: failures.length,
-    lostCost: failures.reduce((sum, r) => sum + computeCost(r).total, 0),
     colors: [...colors.values()],
     lastPrintedAt: item.records[0]?.printedAt ?? null,
     lastFailureAt: failures[0]?.printedAt ?? null,
@@ -633,6 +558,11 @@ export function describeChanges(
   if (base.units !== next.units) parts.push(`${next.units} un.`);
   const a = base.settings;
   const b = next.settings;
+  if (!a || !b) {
+    if (a) parts.push("sem config. do fatiador");
+    if (b) parts.push("com config. do fatiador");
+    return parts.length ? parts.join(" · ") : "mesma config.";
+  }
   if (a.slicer !== b.slicer) parts.push(b.slicer);
   if (a.layerHeightMm !== b.layerHeightMm) {
     parts.push(
@@ -645,7 +575,13 @@ export function describeChanges(
   if (a.infillPattern !== b.infillPattern) parts.push(b.infillPattern);
   if (a.walls !== b.walls) parts.push(`Paredes ${a.walls} → ${b.walls}`);
   if (a.temperatureC !== b.temperatureC) {
-    parts.push(`${a.temperatureC} → ${b.temperatureC} °C`);
+    parts.push(
+      b.temperatureC == null
+        ? "sem temperatura"
+        : a.temperatureC == null
+          ? `${b.temperatureC} °C`
+          : `${a.temperatureC} → ${b.temperatureC} °C`,
+    );
   }
   if (a.extras.trim() !== b.extras.trim() && b.extras.trim()) {
     parts.push(b.extras.trim());
@@ -677,24 +613,15 @@ export function formatDuration(minutes: number) {
   return `${h} h ${String(m).padStart(2, "0")}`;
 }
 
-// Aceita "2 h 06", "2h06", "2:06", "0 h 09", "42 min" ou só minutos ("126").
-export function parseDuration(text: string): number | null {
-  const value = text.trim().toLowerCase();
-  if (!value) return null;
-  const hm = value.match(/^(\d+)\s*(?:h|:)\s*(\d{1,2})?\s*(?:min)?$/);
-  if (hm) return Number(hm[1]) * 60 + Number(hm[2] ?? 0);
-  const m = value.match(/^(\d+)\s*(?:min)?$/);
-  if (m) return Number(m[1]);
-  return null;
-}
-
 export function formatSettings(s: SlicerSettings) {
   return [
     `${formatDecimal(s.layerHeightMm)} mm`,
     `${s.infillPercent}% ${s.infillPattern}`,
     `${s.walls} ${s.walls === 1 ? "parede" : "paredes"}`,
-    `${s.temperatureC} °C`,
-  ].join(" · ");
+    s.temperatureC != null ? `${s.temperatureC} °C` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 export function formatRelativeDays(iso: string, now = new Date()) {
@@ -709,6 +636,11 @@ export function formatRelativeDays(iso: string, now = new Date()) {
   if (days < 30) return `há ${days} dias`;
   const months = Math.floor(days / 30);
   return months === 1 ? "há 1 mês" : `há ${months} meses`;
+}
+
+// O link pode ter sido salvo sem protocolo ("makerworld.com/...").
+export function modelHref(url: string) {
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
 }
 
 export function shortUrl(url: string) {

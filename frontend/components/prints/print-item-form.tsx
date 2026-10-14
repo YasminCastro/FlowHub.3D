@@ -18,13 +18,21 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { FilamentDot } from "@/components/journal/journal-status-badge";
+import { PendingPhoto, pickPhotos } from "@/components/prints/pending-photos";
 import {
+  EMPTY_USAGE,
   FilamentUsageDraft,
   FilamentUsageFields,
+  usageDraftFrom,
   parseDecimal,
   toUsages,
 } from "@/components/prints/filament-usage-fields";
 import {
+  DurationDraft,
+  DurationInput,
+  EMPTY_DURATION,
+  durationToMinutes,
+  minutesToDuration,
   OptionalHint,
   SectionLabel,
   StatDivider,
@@ -34,31 +42,33 @@ import {
   usePageHeaderAction,
   usePageHeaderBreadcrumb,
 } from "@/contexts/page-header-action-context";
+import { useCostContext } from "@/hooks/use-cost-context";
+import { Category, listCategories } from "@/lib/api/category";
 import {
   INFILL_PATTERNS,
-  MOCK_CATEGORIES,
-  MOCK_PRINTERS,
   PrintFilament,
   PrintItem,
   PrintRecord,
   SLICERS,
+  DEFAULT_SLICER_SETTINGS,
+  SlicerSettings,
   computeCost,
+  costRows,
   createPrintItem,
   describePrintFilament,
   divideCost,
+  findCostPrinter,
   formatDecimal,
   formatDuration,
   formatGrams,
   getDefaultRecord,
+  getMissingPrinterCosts,
   listPrintFilaments,
   listPrintItems,
-  parseDuration,
 } from "@/lib/api/print";
 import { cn, formatBRL } from "@/lib/utils";
 
 const NO_PARENT = "none";
-// Escala da barra do rolo, enquanto o filamento não guarda o peso do carretel.
-const SPOOL_BAR_GRAMS = 1000;
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -75,15 +85,16 @@ type Draft = {
   parentId: string;
   date: string;
   printerId: string;
-  time: string;
+  time: DurationDraft;
   units: string;
   usages: FilamentUsageDraft[];
+  // A configuração do fatiador é opcional: só vai se o usuário abrir.
+  hasSettings: boolean;
   slicer: string;
   layerHeightMm: string;
   infillPercent: string;
   infillPattern: string;
   walls: string;
-  temperatureC: string;
   extras: string;
   note: string;
 };
@@ -94,40 +105,39 @@ const EMPTY_DRAFT: Draft = {
   modelUrl: "",
   parentId: NO_PARENT,
   date: today(),
-  printerId: MOCK_PRINTERS[0].id,
-  time: "",
+  // Vazio = primeira impressora cadastrada.
+  printerId: "",
+  time: EMPTY_DURATION,
   units: "1",
-  usages: [{ filamentId: "", grams: "" }],
-  slicer: "Orca",
-  layerHeightMm: "0,2",
-  infillPercent: "15",
-  infillPattern: "giroide",
-  walls: "2",
-  temperatureC: "215",
-  extras: "",
+  usages: [EMPTY_USAGE],
+  ...settingsDraft(null),
   note: "",
 };
+
+function settingsDraft(settings: SlicerSettings | null) {
+  const s = settings ?? DEFAULT_SLICER_SETTINGS;
+  return {
+    hasSettings: settings != null,
+    slicer: s.slicer,
+    layerHeightMm: formatDecimal(s.layerHeightMm),
+    infillPercent: String(s.infillPercent),
+    infillPattern: s.infillPattern,
+    walls: String(s.walls),
+    extras: s.extras,
+  };
+}
 
 // Derivado: começa com a categoria e a impressão do item de origem.
 function draftFromParent(parent: PrintItem, record: PrintRecord): Draft {
   return {
     ...EMPTY_DRAFT,
-    categoryId: parent.category.id,
+    categoryId: parent.category?.id ?? "",
     parentId: parent.id,
-    printerId: record.printer.id,
-    time: formatDuration(record.totalMinutes),
+    printerId: record.printer.id ?? "",
+    time: minutesToDuration(record.totalMinutes),
     units: String(record.units),
-    usages: record.filaments.map((u) => ({
-      filamentId: u.filament.id,
-      grams: formatDecimal(u.grams, 1),
-    })),
-    slicer: record.settings.slicer,
-    layerHeightMm: formatDecimal(record.settings.layerHeightMm),
-    infillPercent: String(record.settings.infillPercent),
-    infillPattern: record.settings.infillPattern,
-    walls: String(record.settings.walls),
-    temperatureC: String(record.settings.temperatureC),
-    extras: record.settings.extras,
+    usages: record.filaments.map((u) => usageDraftFrom(u.filament, u.grams)),
+    ...settingsDraft(record.settings),
   };
 }
 
@@ -135,11 +145,13 @@ function Step({
   n,
   title,
   hint,
+  action,
   children,
 }: {
   n: number;
   title: string;
   hint?: string;
+  action?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -148,6 +160,7 @@ function Step({
         <span className="text-[11px] text-brand-300 tabular-nums">{n}</span>
         <h2 className="font-heading text-[17px] font-medium">{title}</h2>
         {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
+        {action && <div className="ml-auto">{action}</div>}
       </div>
       {children}
     </section>
@@ -182,15 +195,24 @@ export function PrintItemForm() {
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [items, setItems] = useState<PrintItem[]>([]);
   const [filaments, setFilaments] = useState<PrintFilament[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [showExtras, setShowExtras] = useState(false);
-  const [photos, setPhotos] = useState<string[]>([]);
+  const [photos, setPhotos] = useState<PendingPhoto[]>([]);
+  const photosRef = useRef(photos);
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { costs, loadError: costsError } = useCostContext();
+  const printers = costs?.printers ?? [];
 
   useEffect(() => {
-    listPrintFilaments().then(setFilaments);
+    listPrintFilaments()
+      .then(setFilaments)
+      .catch(() => setFilaments([]));
+    listCategories()
+      .then(setCategories)
+      .catch(() => setCategories([]));
     listPrintItems().then((result) => {
       setItems(result);
       const parent = result.find((item) => item.id === parentParam);
@@ -199,7 +221,7 @@ export function PrintItemForm() {
         parent.records.find((r) => r.id === recordParam) ??
         getDefaultRecord(parent);
       setDraft(draftFromParent(parent, record));
-      if (record.settings.extras) setShowExtras(true);
+      if (record.settings?.extras) setShowExtras(true);
     });
   }, [parentParam, recordParam]);
 
@@ -208,31 +230,56 @@ export function PrintItemForm() {
   }
 
   const units = Math.max(1, Math.round(parseDecimal(draft.units)) || 1);
-  const minutes = parseDuration(draft.time) ?? 0;
+  const minutes = durationToMinutes(draft.time) ?? 0;
   const usages = toUsages(draft.usages, filaments);
   const grams = usages.reduce((sum, u) => sum + u.grams, 0);
-  const perUnitCost = divideCost(
-    computeCost({ filaments: usages, totalMinutes: minutes }),
-    units,
-  );
+  const printerId = draft.printerId || printers[0]?.id || "";
+  const printer = costs ? findCostPrinter(costs, printerId) : null;
+  const perUnitCost = costs
+    ? divideCost(
+        computeCost(
+          {
+            filaments: usages,
+            totalMinutes: minutes,
+            units,
+            outcome: "SUCCESS",
+            printer: { id: printerId },
+          },
+          costs,
+        ),
+        units,
+      )
+    : null;
+  const missingPrinterCosts = costs ? getMissingPrinterCosts(printer) : [];
   const parent = items.find((item) => item.id === draft.parentId);
+
+  useEffect(() => {
+    photosRef.current = photos;
+  }, [photos]);
+
+  // Libera os previews que sobraram ao sair da página.
+  useEffect(
+    () => () =>
+      photosRef.current.forEach((photo) => URL.revokeObjectURL(photo.preview)),
+    [],
+  );
 
   function addPhotos(files: FileList | null) {
     if (!files) return;
-    const images = [...files].filter((f) => f.type.startsWith("image/"));
-    setPhotos((prev) => [
-      ...prev,
-      ...images.map((file) => URL.createObjectURL(file)),
-    ]);
+    const { accepted, error: photoError } = pickPhotos(files, photos.length);
+    setError(photoError);
+    setPhotos((prev) => [...prev, ...accepted]);
   }
 
   function validate() {
     if (!draft.name.trim()) return "Dê um nome para a peça.";
-    if (!draft.categoryId) return "Escolha a categoria.";
+    if (!categories.some((c) => c.id === draft.categoryId))
+      return "Escolha a categoria.";
+    if (!printer) return "Escolha a impressora.";
     if (!usages.length) return "Escolha ao menos um filamento.";
     if (usages.some((u) => u.grams <= 0))
       return "Informe as gramas de cada filamento.";
-    if (minutes <= 0) return "Informe o tempo total (ex.: 2 h 06).";
+    if (minutes <= 0) return "Informe o tempo total.";
     return null;
   }
 
@@ -242,36 +289,40 @@ export function PrintItemForm() {
     if (problem) return;
     setIsSaving(true);
     try {
-      const created = await createPrintItem({
-        name: draft.name.trim(),
-        categoryId: draft.categoryId,
-        modelUrl: draft.modelUrl.trim() || null,
-        derivedFromId: draft.parentId === NO_PARENT ? null : draft.parentId,
-        firstRecord: {
-          printedAt: toIso(draft.date),
-          printer:
-            MOCK_PRINTERS.find((p) => p.id === draft.printerId) ??
-            MOCK_PRINTERS[0],
-          filaments: usages,
-          units,
-          totalMinutes: minutes,
-          settings: {
-            slicer: draft.slicer,
-            layerHeightMm: parseDecimal(draft.layerHeightMm),
-            infillPercent: Math.round(parseDecimal(draft.infillPercent)),
-            infillPattern: draft.infillPattern,
-            walls: Math.round(parseDecimal(draft.walls)),
-            temperatureC: Math.round(parseDecimal(draft.temperatureC)),
-            extras: draft.extras.trim(),
+      const { item: created, photoError } = await createPrintItem(
+        {
+          name: draft.name.trim(),
+          categoryId: draft.categoryId,
+          modelUrl: draft.modelUrl.trim() || null,
+          derivedFromId: draft.parentId === NO_PARENT ? null : draft.parentId,
+          firstRecord: {
+            printedAt: toIso(draft.date),
+            printer: { id: printer!.id, name: printer!.name },
+            filaments: usages,
+            units,
+            totalMinutes: minutes,
+            settings: draft.hasSettings
+              ? {
+                  slicer: draft.slicer,
+                  layerHeightMm: parseDecimal(draft.layerHeightMm),
+                  infillPercent: Math.round(parseDecimal(draft.infillPercent)),
+                  infillPattern: draft.infillPattern,
+                  walls: Math.round(parseDecimal(draft.walls)),
+                  temperatureC: null,
+                  extras: draft.extras.trim(),
+                }
+              : null,
+            outcome: "SUCCESS",
+            failureReason: null,
+            note: draft.note.trim() || null,
+            changeSummary: "Primeira impressão",
           },
-          outcome: "SUCCESS",
-          failureReason: null,
-          note: draft.note.trim() || null,
-          changeSummary: "Primeira impressão",
-          photos,
         },
-      });
-      router.push(`/dashboard/impressoes/${created.id}`);
+        photos.map((photo) => photo.file),
+      );
+      router.push(
+        `/dashboard/impressoes/${created.id}${photoError ? "?fotos=erro" : ""}`,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível salvar.");
       setIsSaving(false);
@@ -317,13 +368,6 @@ export function PrintItemForm() {
     </>,
   );
 
-  const costRows = [
-    ["Filamento", perUnitCost.filament],
-    ["Energia", perUnitCost.energy],
-    ["Impressora (hora)", perUnitCost.printer],
-    ["Mão de obra", perUnitCost.labor],
-  ] as const;
-
   return (
     <div className="grid grid-cols-1 items-start gap-9 p-8 lg:grid-cols-[minmax(0,1fr)_300px]">
       <form
@@ -357,7 +401,7 @@ export function PrintItemForm() {
               />
               {photos.length ? (
                 <div className="grid grid-cols-2 gap-1.5">
-                  {photos.map((src, index) => (
+                  {photos.map(({ preview: src }, index) => (
                     <div
                       key={src}
                       className={cn(
@@ -376,7 +420,9 @@ export function PrintItemForm() {
                         aria-label={`Remover foto ${index + 1}`}
                         onClick={() => {
                           URL.revokeObjectURL(src);
-                          setPhotos((prev) => prev.filter((p) => p !== src));
+                          setPhotos((prev) =>
+                            prev.filter((p) => p.preview !== src),
+                          );
                         }}
                         className="absolute top-1 right-1 grid size-5 place-items-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                       >
@@ -439,13 +485,13 @@ export function PrintItemForm() {
               <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
                 <Field label="Categoria">
                   <Select
-                    value={draft.categoryId}
+                    value={draft.categoryId || null}
                     onValueChange={(value) => set("categoryId", value ?? "")}
                   >
                     <SelectTrigger aria-label="Categoria" className="w-full">
                       <SelectValue>
                         {(value: string) => {
-                          const c = MOCK_CATEGORIES.find((o) => o.id === value);
+                          const c = categories.find((o) => o.id === value);
                           return c ? (
                             <span className="flex items-center gap-2">
                               <span
@@ -463,7 +509,7 @@ export function PrintItemForm() {
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      {MOCK_CATEGORIES.map((c) => (
+                      {categories.map((c) => (
                         <SelectItem key={c.id} value={c.id}>
                           <span
                             className="size-2.5 rounded-[3px]"
@@ -535,7 +581,7 @@ export function PrintItemForm() {
         <Separator />
 
         <Step n={2} title="Primeira impressão" hint="vira o registro padrão">
-          <div className="grid grid-cols-2 gap-3.5 md:grid-cols-[1fr_1fr_1fr_110px]">
+          <div className="grid grid-cols-2 gap-3.5 md:grid-cols-[1fr_1fr_minmax(150px,1fr)_110px]">
             <Field label="Data" htmlFor="print-date">
               <Input
                 id="print-date"
@@ -548,18 +594,22 @@ export function PrintItemForm() {
             </Field>
             <Field label="Impressora">
               <Select
-                value={draft.printerId}
+                value={printerId || null}
                 onValueChange={(value) => value && set("printerId", value)}
               >
                 <SelectTrigger aria-label="Impressora" className="w-full">
                   <SelectValue>
                     {(value: string) =>
-                      MOCK_PRINTERS.find((p) => p.id === value)?.name
+                      printers.find((p) => p.id === value)?.name ?? (
+                        <span className="text-muted-foreground">
+                          {costs ? "Nenhuma cadastrada" : "Carregando..."}
+                        </span>
+                      )
                     }
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {MOCK_PRINTERS.map((p) => (
+                  {printers.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
                       {p.name}
                     </SelectItem>
@@ -568,12 +618,11 @@ export function PrintItemForm() {
               </Select>
             </Field>
             <Field label="Tempo total" htmlFor="print-time">
-              <Input
+              <DurationInput
                 id="print-time"
-                placeholder="2 h 06"
+                label="Tempo total"
                 value={draft.time}
-                onChange={(e) => set("time", e.target.value)}
-                className="tabular-nums"
+                onChange={(next) => set("time", next)}
               />
             </Field>
             <Field label="Unidades" htmlFor="print-units">
@@ -598,103 +647,128 @@ export function PrintItemForm() {
 
         <Separator />
 
-        <Step n={3} title="Configuração do fatiador">
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-            <Field label="Fatiador">
-              <Select
-                value={draft.slicer}
-                onValueChange={(value) => value && set("slicer", value)}
+        <Step
+          n={3}
+          title="Configuração do fatiador"
+          hint="opcional"
+          action={
+            draft.hasSettings && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground"
+                onClick={() => set("hasSettings", false)}
               >
-                <SelectTrigger aria-label="Fatiador" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SLICERS.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {s}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Camada" htmlFor="print-layer">
-              <SuffixInput
-                id="print-layer"
-                suffix="mm"
-                value={draft.layerHeightMm}
-                onChange={(e) => set("layerHeightMm", e.target.value)}
-              />
-            </Field>
-            <Field label="Preenchimento" htmlFor="print-infill">
-              <div className="grid grid-cols-[64px_minmax(0,1fr)] gap-1.5">
-                <SuffixInput
-                  id="print-infill"
-                  suffix="%"
-                  className="pr-6"
-                  value={draft.infillPercent}
-                  onChange={(e) => set("infillPercent", e.target.value)}
-                />
-                <Select
-                  value={draft.infillPattern}
-                  onValueChange={(value) =>
-                    value && set("infillPattern", value)
-                  }
-                >
-                  <SelectTrigger
-                    aria-label="Padrão de preenchimento"
-                    className="w-full"
+                <X />
+                Remover
+              </Button>
+            )
+          }
+        >
+          {draft.hasSettings ? (
+            <>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <Field label="Fatiador">
+                  <Select
+                    value={draft.slicer}
+                    onValueChange={(value) => value && set("slicer", value)}
                   >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {INFILL_PATTERNS.map((p) => (
-                      <SelectItem key={p} value={p}>
-                        {p}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                    <SelectTrigger aria-label="Fatiador" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SLICERS.map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {s}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Camada" htmlFor="print-layer">
+                  <SuffixInput
+                    id="print-layer"
+                    suffix="mm"
+                    value={draft.layerHeightMm}
+                    onChange={(e) => set("layerHeightMm", e.target.value)}
+                  />
+                </Field>
+                <Field label="Preenchimento" htmlFor="print-infill">
+                  <div className="grid grid-cols-[64px_minmax(0,1fr)] gap-1.5">
+                    <SuffixInput
+                      id="print-infill"
+                      suffix="%"
+                      className="pr-6"
+                      value={draft.infillPercent}
+                      onChange={(e) => set("infillPercent", e.target.value)}
+                    />
+                    <Select
+                      value={draft.infillPattern}
+                      onValueChange={(value) =>
+                        value && set("infillPattern", value)
+                      }
+                    >
+                      <SelectTrigger
+                        aria-label="Padrão de preenchimento"
+                        className="w-full"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {INFILL_PATTERNS.map((p) => (
+                          <SelectItem key={p} value={p}>
+                            {p}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </Field>
+                <Field label="Paredes" htmlFor="print-walls">
+                  <Input
+                    id="print-walls"
+                    inputMode="numeric"
+                    value={draft.walls}
+                    onChange={(e) => set("walls", e.target.value)}
+                    className="tabular-nums"
+                  />
+                </Field>
               </div>
-            </Field>
-            <Field label="Paredes" htmlFor="print-walls">
-              <Input
-                id="print-walls"
-                inputMode="numeric"
-                value={draft.walls}
-                onChange={(e) => set("walls", e.target.value)}
-                className="tabular-nums"
-              />
-            </Field>
-            <Field label="Temperatura" htmlFor="print-temp">
-              <SuffixInput
-                id="print-temp"
-                suffix="°C"
-                value={draft.temperatureC}
-                onChange={(e) => set("temperatureC", e.target.value)}
-              />
-            </Field>
-          </div>
-          {showExtras ? (
-            <Field label="Outros ajustes" htmlFor="print-extras">
-              <Textarea
-                id="print-extras"
-                className="min-h-16"
-                placeholder="Ex.: suporte em árvore, brim 5 mm, velocidade 80%"
-                maxLength={500}
-                value={draft.extras}
-                onChange={(e) => set("extras", e.target.value)}
-              />
-            </Field>
+              {showExtras ? (
+                <Field label="Outros ajustes" htmlFor="print-extras">
+                  <Textarea
+                    id="print-extras"
+                    className="min-h-16"
+                    placeholder="Ex.: suporte em árvore, brim 5 mm, velocidade 80%"
+                    maxLength={500}
+                    value={draft.extras}
+                    onChange={(e) => set("extras", e.target.value)}
+                  />
+                </Field>
+              ) : (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="self-start text-brand-300"
+                  onClick={() => setShowExtras(true)}
+                >
+                  <Plus />
+                  Suporte, brim, velocidade, outros
+                </Button>
+              )}
+            </>
           ) : (
             <Button
               type="button"
               variant="ghost"
               size="sm"
               className="self-start text-brand-300"
-              onClick={() => setShowExtras(true)}
+              onClick={() => set("hasSettings", true)}
             >
               <Plus />
-              Suporte, brim, velocidade, outros
+              Adicionar configuração do fatiador
             </Button>
           )}
         </Step>
@@ -744,49 +818,78 @@ export function PrintItemForm() {
           </div>
         </div>
         <Separator />
-        <div className="flex flex-col gap-2 text-[12.5px] text-muted-foreground tabular-nums">
-          {costRows.map(([label, value]) => (
-            <div key={label} className="flex">
-              <span>{label}</span>
-              <span className="ml-auto">{formatBRL(value)}</span>
+        {costs && perUnitCost ? (
+          <>
+            <div className="flex flex-col gap-2 text-[12.5px] text-muted-foreground tabular-nums">
+              {costRows(perUnitCost, costs).map(([label, value]) => (
+                <div key={label} className="flex">
+                  <span>{label}</span>
+                  <span className="ml-auto">{formatBRL(value)}</span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        <div className="flex items-baseline">
-          <span className="text-[13px]">Custo / un.</span>
-          <span className="ml-auto font-heading text-[26px] leading-none font-medium tabular-nums">
-            {formatBRL(perUnitCost.total)}
-          </span>
-        </div>
+            <div className="flex items-baseline">
+              <span className="text-[13px]">Custo / un.</span>
+              <span className="ml-auto font-heading text-[26px] leading-none font-medium tabular-nums">
+                {formatBRL(perUnitCost.total)}
+              </span>
+            </div>
+            {missingPrinterCosts.length > 0 && (
+              <p className="text-[11.5px] leading-relaxed text-brand-300">
+                {printer ? (
+                  <>
+                    {printer.name} está sem {missingPrinterCosts.join(" e ")}{" "}
+                    cadastrado: essa parte ficou de fora.{" "}
+                    <Link
+                      href={`/dashboard/printers/${printer.id}/edit`}
+                      className="underline"
+                    >
+                      Completar impressora
+                    </Link>
+                  </>
+                ) : (
+                  <>
+                    Sem impressora, energia e manutenção ficam de fora.{" "}
+                    <Link href="/dashboard/printers/new" className="underline">
+                      Cadastrar impressora
+                    </Link>
+                  </>
+                )}
+              </p>
+            )}
+            <p className="text-[11px] leading-relaxed text-muted-foreground/80">
+              Taxas de{" "}
+              <Link
+                href="/dashboard/custos-energia"
+                className="text-brand-300 hover:underline"
+              >
+                Custos e energia
+              </Link>
+              . Mão de obra e margem entram no preço, não no custo.
+            </p>
+          </>
+        ) : (
+          <p className="text-[12px] text-muted-foreground">
+            {costsError ?? "Carregando custos..."}
+          </p>
+        )}
         {usages.length > 0 && (
           <>
             <Separator />
-            <div className="flex flex-col gap-3">
-              {usages.map(({ filament, grams: used }) => {
-                const after = Math.max(0, filament.remainingGrams - used);
-                return (
-                  <div key={filament.id} className="flex flex-col gap-1.75">
-                    <div className="flex items-center gap-1.75 text-xs text-muted-foreground tabular-nums">
-                      <FilamentDot colors={filament.colors} />
-                      {describePrintFilament(filament)}
-                      <span className="ml-auto">
-                        {formatGrams(filament.remainingGrams)} →{" "}
-                        {formatGrams(after)}
-                      </span>
-                    </div>
-                    <div className="h-1.25 overflow-hidden rounded-full bg-foreground/10">
-                      <div
-                        className="h-full bg-brand"
-                        style={{
-                          width: `${Math.min(100, (after / SPOOL_BAR_GRAMS) * 100)}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="flex flex-col gap-2">
+              {usages.map(({ filament, grams: used }) => (
+                <div
+                  key={filament.id}
+                  className="flex items-center gap-1.75 text-xs text-muted-foreground tabular-nums"
+                >
+                  <FilamentDot colors={filament.colors} />
+                  {describePrintFilament(filament)}
+                  <span className="ml-auto">{formatGrams(used)}</span>
+                </div>
+              ))}
               <span className="text-[11px] text-muted-foreground/80">
-                Desconta do rolo ao salvar.
+                Gasto na impressão. O nível do rolo continua marcado à mão em
+                Filamentos.
               </span>
             </div>
           </>

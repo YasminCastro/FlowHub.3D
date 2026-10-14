@@ -1,6 +1,13 @@
 "use client";
 
-import { CopyPlus, GitBranch, MoreHorizontal, Star } from "lucide-react";
+import {
+  CopyPlus,
+  GitBranch,
+  MoreHorizontal,
+  Pencil,
+  Star,
+  Trash2,
+} from "lucide-react";
 import { Fragment, KeyboardEvent, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -9,6 +16,7 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { FilamentDot } from "@/components/journal/journal-status-badge";
@@ -19,7 +27,9 @@ import {
 } from "@/components/prints/print-bits";
 import {
   PrintRecord,
+  CostContext,
   computeCost,
+  costRows,
   describePrintFilament,
   formatDuration,
   formatGrams,
@@ -38,18 +48,25 @@ function whatChanged(record: PrintRecord, isDefault: boolean) {
     .join(" · ");
 }
 
-function RecordDetails({ record }: { record: PrintRecord }) {
-  const cost = computeCost(record);
+function RecordDetails({
+  record,
+  costs,
+}: {
+  record: PrintRecord;
+  costs: CostContext;
+}) {
+  const cost = computeCost(record, costs);
   const s = record.settings;
   return (
     <div className="grid grid-cols-1 gap-5 border-b border-border/60 bg-foreground/[0.025] py-4 pr-4 pl-8.5 sm:grid-cols-3">
       <div className="flex flex-col gap-1.5">
         <SectionLabel>Configuração</SectionLabel>
         <p className="text-[12.5px] leading-relaxed text-foreground/72">
-          {record.printer.name} · {s.slicer}
+          {record.printer.name}
+          {s ? ` · ${s.slicer}` : ""}
           <br />
-          {formatSettings(s)}
-          {s.extras && (
+          {s ? formatSettings(s) : "Sem configuração do fatiador"}
+          {s?.extras && (
             <>
               <br />
               {s.extras}
@@ -82,14 +99,7 @@ function RecordDetails({ record }: { record: PrintRecord }) {
           {record.outcome === "FAILURE" ? "Custo perdido" : "Custo"}
         </SectionLabel>
         <div className="flex flex-col gap-1 text-[12px] text-muted-foreground tabular-nums">
-          {(
-            [
-              ["Filamento", cost.filament],
-              ["Energia", cost.energy],
-              ["Impressora", cost.printer],
-              ["Mão de obra", cost.labor],
-            ] as const
-          ).map(([label, value]) => (
+          {costRows(cost, costs).map(([label, value]) => (
             <div key={label} className="flex">
               <span>{label}</span>
               <span className="ml-auto">{formatBRL(value)}</span>
@@ -98,11 +108,11 @@ function RecordDetails({ record }: { record: PrintRecord }) {
         </div>
         {record.photos.length > 0 && (
           <div className="mt-1.5 flex gap-1.5">
-            {record.photos.map((src) => (
+            {record.photos.map((photo) => (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                key={src}
-                src={src}
+                key={photo.id}
+                src={photo.src}
                 alt=""
                 className="size-12 rounded-sm object-cover"
               />
@@ -116,16 +126,22 @@ function RecordDetails({ record }: { record: PrintRecord }) {
 
 export function PrintRecordsTable({
   records,
+  costs,
   defaultRecordId,
   onMakeDefault,
   onStartFrom,
   onDerive,
+  onEdit,
+  onDelete,
 }: {
   records: PrintRecord[];
+  costs: CostContext;
   defaultRecordId: string;
   onMakeDefault: (record: PrintRecord) => void;
   onStartFrom: (record: PrintRecord) => void;
   onDerive: (record: PrintRecord) => void;
+  onEdit: (record: PrintRecord) => void;
+  onDelete: (record: PrintRecord) => void;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -168,7 +184,7 @@ export function PrintRecordsTable({
           const isFailure = record.outcome === "FAILURE";
           const isDefault = record.id === defaultRecordId;
           const isOpen = openId === record.id;
-          const total = computeCost(record).total;
+          const total = computeCost(record, costs).total;
           const [first, ...others] = record.filaments;
 
           return (
@@ -262,6 +278,10 @@ export function PrintRecordsTable({
                     />
                     <DropdownMenuContent align="end" className="w-60">
                       <DropdownMenuGroup>
+                        <DropdownMenuItem onClick={() => onEdit(record)}>
+                          <Pencil />
+                          Editar registro
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           disabled={isDefault || isFailure}
                           onClick={() => onMakeDefault(record)}
@@ -278,11 +298,21 @@ export function PrintRecordsTable({
                           Criar derivado a partir dele
                         </DropdownMenuItem>
                       </DropdownMenuGroup>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuGroup>
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onClick={() => onDelete(record)}
+                        >
+                          <Trash2 />
+                          Excluir registro
+                        </DropdownMenuItem>
+                      </DropdownMenuGroup>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
               </div>
-              {isOpen && <RecordDetails record={record} />}
+              {isOpen && <RecordDetails record={record} costs={costs} />}
             </Fragment>
           );
         })}

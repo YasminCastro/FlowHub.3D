@@ -35,15 +35,21 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { FilamentDot } from "@/components/journal/journal-status-badge";
+import { PendingPhoto, pickPhotos } from "@/components/prints/pending-photos";
 import {
   FilamentUsageDraft,
   FilamentUsageFields,
+  usageDraftFrom,
   parseDecimal,
   toUsages,
 } from "@/components/prints/filament-usage-fields";
 import {
   ChangedMark,
+  DurationInput,
+  EMPTY_DURATION,
+  durationToMinutes,
   FAILURE_COLOR,
+  minutesToDuration,
   OptionalHint,
   OutcomeToggle,
   SectionLabel,
@@ -51,14 +57,17 @@ import {
   changedFieldClass,
 } from "@/components/prints/print-bits";
 import {
+  DEFAULT_SLICER_SETTINGS,
   FAILURE_REASONS,
-  MOCK_PRINTERS,
   PrintFilament,
   PrintItem,
   PrintOutcome,
   PrintRecord,
   PrintRecordInput,
+  SlicerSettings,
   addPrintRecord,
+  updatePrintRecord,
+  CostContext,
   computeCost,
   describeChanges,
   describePrintFilament,
@@ -66,7 +75,7 @@ import {
   formatDuration,
   formatGrams,
   getRecordGrams,
-  parseDuration,
+  isDeletedFilament,
 } from "@/lib/api/print";
 import { cn, formatBRL, formatDatePtBR } from "@/lib/utils";
 
@@ -103,57 +112,106 @@ type SettingsDraft = {
 function RecordForm({
   item,
   base,
+  isEditing,
   filaments,
+  costs,
   onChangeBase,
   onCancel,
   onSaved,
 }: {
   item: PrintItem;
+  /** Novo: o registro de onde começa. Edição: o próprio registro. */
   base: PrintRecord;
+  isEditing: boolean;
   filaments: PrintFilament[];
+  costs: CostContext;
   onChangeBase: (recordId: string) => void;
   onCancel: () => void;
-  onSaved: (item: PrintItem) => void;
+  onSaved: (item: PrintItem, photoError: string | null) => void;
 }) {
   const isDefaultBase = base.id === item.defaultRecordId;
   const baseUnits = Math.max(1, base.units);
 
-  const [date, setDate] = useState(today());
-  const [printerId, setPrinterId] = useState(base.printer.id);
-  const [units, setUnits] = useState(String(base.units));
-  const [usages, setUsages] = useState<FilamentUsageDraft[]>(
-    base.filaments.map((u) => ({
-      filamentId: u.filament.id,
-      grams: formatDecimal(u.grams, 1),
-    })),
+  const [date, setDate] = useState(
+    isEditing ? base.printedAt.slice(0, 10) : today(),
   );
-  const [time, setTime] = useState(formatDuration(base.totalMinutes));
+  // Impressora excluída não pode ir num registro novo: começa da primeira.
+  const [printerId, setPrinterId] = useState(
+    costs.printers.some((p) => p.id === base.printer.id)
+      ? base.printer.id!
+      : (costs.printers[0]?.id ?? ""),
+  );
+  const [units, setUnits] = useState(String(base.units));
+  // Rolo do registro de base que já acabou continua escolhível aqui; o que
+  // foi excluído não, e a linha dele começa vazia.
+  const filamentOptions = [
+    ...filaments,
+    ...base.filaments
+      .map((u) => u.filament)
+      .filter(
+        (f) =>
+          (isEditing || !isDeletedFilament(f)) &&
+          !filaments.some((option) => option.id === f.id),
+      ),
+  ];
+  const [usages, setUsages] = useState<FilamentUsageDraft[]>(
+    base.filaments.map((u) =>
+      usageDraftFrom(u.filament, u.grams, { keepDeleted: isEditing }),
+    ),
+  );
+  const [time, setTime] = useState(minutesToDuration(base.totalMinutes));
   const [gramsTouched, setGramsTouched] = useState(false);
   const [timeTouched, setTimeTouched] = useState(false);
+  // Configuração do fatiador é opcional: aberta se o registro de base tinha.
+  const [showSettings, setShowSettings] = useState(base.settings != null);
+  const startSettings = base.settings ?? DEFAULT_SLICER_SETTINGS;
   const [settings, setSettings] = useState<SettingsDraft>({
-    layerHeightMm: formatDecimal(base.settings.layerHeightMm),
-    infillPercent: String(base.settings.infillPercent),
-    walls: String(base.settings.walls),
-    temperatureC: String(base.settings.temperatureC),
+    layerHeightMm: formatDecimal(startSettings.layerHeightMm),
+    infillPercent: String(startSettings.infillPercent),
+    walls: String(startSettings.walls),
+    temperatureC:
+      startSettings.temperatureC != null
+        ? String(startSettings.temperatureC)
+        : "",
   });
-  const [outcome, setOutcome] = useState<PrintOutcome>("SUCCESS");
-  const [reason, setReason] = useState<string | null>(null);
-  const [otherReason, setOtherReason] = useState("");
-  const [failureGrams, setFailureGrams] = useState("");
-  const [failureTime, setFailureTime] = useState("");
+  // Na edição, resultado, motivo, observação e fotos vêm do registro.
+  const editedFailure = isEditing && base.outcome === "FAILURE";
+  const knownReason =
+    editedFailure && FAILURE_REASONS.includes(base.failureReason ?? "");
+  const [outcome, setOutcome] = useState<PrintOutcome>(
+    isEditing ? base.outcome : "SUCCESS",
+  );
+  const [reason, setReason] = useState<string | null>(
+    editedFailure ? (knownReason ? base.failureReason : OTHER_REASON) : null,
+  );
+  const [otherReason, setOtherReason] = useState(
+    editedFailure && !knownReason ? (base.failureReason ?? "") : "",
+  );
+  const [failureGrams, setFailureGrams] = useState(
+    editedFailure ? formatDecimal(getRecordGrams(base), 1) : "",
+  );
+  const [failureTime, setFailureTime] = useState(
+    editedFailure ? minutesToDuration(base.totalMinutes) : EMPTY_DURATION,
+  );
   const [createJournalEntry, setCreateJournalEntry] = useState(true);
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState(isEditing ? (base.note ?? "") : "");
   const [makeDefault, setMakeDefault] = useState(false);
-  const [photos, setPhotos] = useState<string[]>([]);
+  const [photos, setPhotos] = useState<PendingPhoto[]>([]);
+  const [savedPhotos, setSavedPhotos] = useState(isEditing ? base.photos : []);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isFailure = outcome === "FAILURE";
   const unitCount = Math.max(1, Math.round(parseDecimal(units)) || 1);
-  const printer = MOCK_PRINTERS.find((p) => p.id === printerId) ?? base.printer;
-  const parsedUsages = toUsages(usages, filaments);
-  const plannedMinutes = parseDuration(time) ?? 0;
+  const printerOptions = costs.printers.map((p) => ({
+    id: p.id,
+    name: p.name,
+  }));
+  const selectedPrinter = printerOptions.find((p) => p.id === printerId);
+  const printer = selectedPrinter ?? base.printer;
+  const parsedUsages = toUsages(usages, filamentOptions);
+  const plannedMinutes = durationToMinutes(time) ?? 0;
 
   // Gramas e tempo acompanham as unidades, a partir do padrão por unidade,
   // até o usuário mexer neles.
@@ -174,17 +232,30 @@ function RecordForm({
       );
     }
     if (!timeTouched) {
-      setTime(formatDuration((base.totalMinutes / baseUnits) * n));
+      setTime(minutesToDuration((base.totalMinutes / baseUnits) * n));
     }
   }
 
-  const nextSettings = {
-    ...base.settings,
-    layerHeightMm: parseDecimal(settings.layerHeightMm),
-    infillPercent: Math.round(parseDecimal(settings.infillPercent)),
-    walls: Math.round(parseDecimal(settings.walls)),
-    temperatureC: Math.round(parseDecimal(settings.temperatureC)),
-  };
+  const nextSettings: SlicerSettings | null = showSettings
+    ? {
+        ...startSettings,
+        layerHeightMm: parseDecimal(settings.layerHeightMm),
+        infillPercent: Math.round(parseDecimal(settings.infillPercent)),
+        walls: Math.round(parseDecimal(settings.walls)),
+        temperatureC: settings.temperatureC.trim()
+          ? Math.round(parseDecimal(settings.temperatureC))
+          : null,
+      }
+    : null;
+
+  // "Mudou" só faz sentido com configuração dos dois lados.
+  function settingDiffers(key: keyof SettingsDraft) {
+    return (
+      base.settings != null &&
+      nextSettings != null &&
+      nextSettings[key] !== base.settings[key]
+    );
+  }
 
   const changed = {
     printer: printerId !== base.printer.id,
@@ -192,10 +263,10 @@ function RecordForm({
       usages.map((u) => u.filamentId).join() !==
       base.filaments.map((u) => u.filament.id).join(),
     units: unitCount !== base.units,
-    layerHeightMm: nextSettings.layerHeightMm !== base.settings.layerHeightMm,
-    infillPercent: nextSettings.infillPercent !== base.settings.infillPercent,
-    walls: nextSettings.walls !== base.settings.walls,
-    temperatureC: nextSettings.temperatureC !== base.settings.temperatureC,
+    layerHeightMm: settingDiffers("layerHeightMm"),
+    infillPercent: settingDiffers("infillPercent"),
+    walls: settingDiffers("walls"),
+    temperatureC: settingDiffers("temperatureC"),
   };
   const settingsChanges = [
     changed.layerHeightMm,
@@ -225,12 +296,18 @@ function RecordForm({
       }))
     : parsedUsages;
   const recordMinutes = isFailure
-    ? (parseDuration(failureTime) ?? 0)
+    ? (durationToMinutes(failureTime) ?? 0)
     : plannedMinutes;
-  const cost = computeCost({
-    filaments: recordUsages,
-    totalMinutes: recordMinutes,
-  });
+  const cost = computeCost(
+    {
+      filaments: recordUsages,
+      totalMinutes: recordMinutes,
+      units: unitCount,
+      outcome,
+      printer,
+    },
+    costs,
+  );
   const failureReason =
     reason === OTHER_REASON ? otherReason.trim() : (reason ?? "");
 
@@ -240,25 +317,29 @@ function RecordForm({
 
   function addPhotos(files: FileList | null) {
     if (!files) return;
-    const images = [...files].filter((f) => f.type.startsWith("image/"));
-    setPhotos((prev) => [
-      ...prev,
-      ...images.map((file) => URL.createObjectURL(file)),
-    ]);
+    const { accepted, error: photoError } = pickPhotos(
+      files,
+      savedPhotos.length + photos.length,
+    );
+    setError(photoError);
+    setPhotos((prev) => [...prev, ...accepted]);
   }
 
   function validate() {
     if (!date) return "Informe a data.";
+    if (isEditing && isDefaultBase && isFailure)
+      return "O registro padrão precisa ter dado certo. Marque outro como padrão antes.";
+    if (!selectedPrinter) return "Escolha a impressora.";
     if (!parsedUsages.length) return "Escolha ao menos um filamento.";
     if (isFailure) {
       if (!failureReason) return "Conte o que aconteceu.";
-      if (parseDuration(failureTime) == null)
-        return "Informe o tempo até parar (ex.: 0 h 09).";
+      if (durationToMinutes(failureTime) == null)
+        return "Informe o tempo até parar.";
       return null;
     }
     if (parsedUsages.some((u) => u.grams <= 0))
       return "Informe as gramas de cada filamento.";
-    if (plannedMinutes <= 0) return "Informe o tempo (ex.: 2 h 06).";
+    if (plannedMinutes <= 0) return "Informe o tempo total.";
     return null;
   }
 
@@ -277,12 +358,21 @@ function RecordForm({
       failureReason: isFailure ? failureReason : null,
       note: note.trim() || null,
       changeSummary: isFailure ? null : changeSummary,
-      photos,
     };
     setIsSaving(true);
     try {
-      const updated = await addPrintRecord(item.id, input, { makeDefault });
-      onSaved(updated);
+      const options = { makeDefault: makeDefault && !isFailure };
+      const files = photos.map((photo) => photo.file);
+      const { item: updated, photoError } = isEditing
+        ? await updatePrintRecord(item.id, base.id, input, options, {
+            add: files,
+            removeIds: base.photos
+              .filter((photo) => !savedPhotos.some((p) => p.id === photo.id))
+              .map((photo) => photo.id),
+          })
+        : await addPrintRecord(item.id, input, options, files);
+      photos.forEach((photo) => URL.revokeObjectURL(photo.preview));
+      onSaved(updated, photoError);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível salvar.");
       setIsSaving(false);
@@ -298,48 +388,58 @@ function RecordForm({
   return (
     <>
       <SheetHeader className="px-6 pt-5 pb-0">
-        <SheetTitle className="text-lg">Novo registro</SheetTitle>
+        <SheetTitle className="text-lg">
+          {isEditing ? "Editar registro" : "Novo registro"}
+        </SheetTitle>
         <SheetDescription className="text-[12.5px]">
-          {item.name} · {ordinal(item.records.length + 1)} registro
+          {item.name} ·{" "}
+          {isEditing
+            ? `registro de ${formatDatePtBR(base.printedAt)}`
+            : `${ordinal(item.records.length + 1)} registro`}
         </SheetDescription>
       </SheetHeader>
 
-      <div className="mx-6 flex items-center gap-2.25 rounded-md bg-brand/8 px-3.25 py-2 shadow-[inset_0_0_0_1px_var(--brand-800)]">
-        <Star
-          className={cn(
-            "size-3.25 shrink-0 text-brand",
-            isDefaultBase && "fill-current",
-          )}
-          aria-hidden="true"
-        />
-        <span className="text-[12.5px] text-foreground/75">
-          Começou do registro {isDefaultBase ? "padrão " : ""}de{" "}
-          {formatDatePtBR(base.printedAt, { day: "2-digit", month: "2-digit" })}
-        </span>
-        <Select
-          value={base.id}
-          onValueChange={(value) => value && onChangeBase(value)}
-        >
-          <SelectTrigger
-            size="sm"
-            aria-label="Começar de outro registro"
-            className="ml-auto w-auto border-transparent bg-transparent px-1.5 text-xs text-brand-300 hover:bg-brand/10"
+      {!isEditing && (
+        <div className="mx-6 flex items-center gap-2.25 rounded-md bg-brand/8 px-3.25 py-2 shadow-[inset_0_0_0_1px_var(--brand-800)]">
+          <Star
+            className={cn(
+              "size-3.25 shrink-0 text-brand",
+              isDefaultBase && "fill-current",
+            )}
+            aria-hidden="true"
+          />
+          <span className="text-[12.5px] text-foreground/75">
+            Começou do registro {isDefaultBase ? "padrão " : ""}de{" "}
+            {formatDatePtBR(base.printedAt, {
+              day: "2-digit",
+              month: "2-digit",
+            })}
+          </span>
+          <Select
+            value={base.id}
+            onValueChange={(value) => value && onChangeBase(value)}
           >
-            Usar outro
-          </SelectTrigger>
-          <SelectContent align="end" alignItemWithTrigger={false}>
-            {successRecords.map((r) => (
-              <SelectItem key={r.id} value={r.id}>
-                {r.filaments[0] && (
-                  <FilamentDot colors={r.filaments[0].filament.colors} />
-                )}
-                {formatDatePtBR(r.printedAt)} · {r.units} un.
-                {r.id === item.defaultRecordId && " · padrão"}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+            <SelectTrigger
+              size="sm"
+              aria-label="Começar de outro registro"
+              className="ml-auto w-auto border-transparent bg-transparent px-1.5 text-xs text-brand-300 hover:bg-brand/10"
+            >
+              Usar outro
+            </SelectTrigger>
+            <SelectContent align="end" alignItemWithTrigger={false}>
+              {successRecords.map((r) => (
+                <SelectItem key={r.id} value={r.id}>
+                  {r.filaments[0] && (
+                    <FilamentDot colors={r.filaments[0].filament.colors} />
+                  )}
+                  {formatDatePtBR(r.printedAt)} · {r.units} un.
+                  {r.id === item.defaultRecordId && " · padrão"}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       <div className="flex min-h-0 flex-1 flex-col gap-4.5 overflow-y-auto px-6 py-1">
         <div className="grid grid-cols-2 gap-3.5">
@@ -360,7 +460,7 @@ function RecordForm({
               {changed.printer && <ChangedMark />}
             </Label>
             <Select
-              value={printerId}
+              value={printerId || null}
               onValueChange={(value) => value && setPrinterId(value)}
             >
               <SelectTrigger
@@ -369,12 +469,12 @@ function RecordForm({
               >
                 <SelectValue>
                   {(value: string) =>
-                    MOCK_PRINTERS.find((p) => p.id === value)?.name
+                    printerOptions.find((p) => p.id === value)?.name
                   }
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {MOCK_PRINTERS.map((p) => (
+                {printerOptions.map((p) => (
                   <SelectItem key={p.id} value={p.id}>
                     {p.name}
                   </SelectItem>
@@ -397,9 +497,10 @@ function RecordForm({
               }
               setUsages(next);
             }}
-            filaments={filaments}
+            filaments={filamentOptions}
             changed={changed.filament}
             showPrice={false}
+            stacked
           />
         </div>
 
@@ -419,15 +520,14 @@ function RecordForm({
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="record-time">Tempo total</Label>
-            <Input
+            <DurationInput
               id="record-time"
+              label="Tempo total"
               value={time}
-              placeholder="2 h 06"
-              onChange={(e) => {
+              onChange={(next) => {
                 setTimeTouched(true);
-                setTime(e.target.value);
+                setTime(next);
               }}
-              className="tabular-nums"
             />
           </div>
         </div>
@@ -442,38 +542,71 @@ function RecordForm({
         )}
 
         <div className="flex flex-col gap-2.5">
-          <div className="flex items-center">
-            <SectionLabel>Configuração</SectionLabel>
-            <span className="ml-auto text-[11.5px] text-muted-foreground">
-              {settingsChanges === 0
-                ? "igual ao registro de base"
-                : `${settingsChanges} ${settingsChanges === 1 ? "alteração" : "alterações"}`}
-            </span>
+          <div className="flex items-center gap-2">
+            <SectionLabel>Configuração do fatiador</SectionLabel>
+            {showSettings && (
+              <>
+                <span className="ml-auto text-[11.5px] text-muted-foreground">
+                  {!base.settings
+                    ? "nova"
+                    : settingsChanges === 0
+                      ? isEditing
+                        ? "sem alterações"
+                        : "igual ao registro de base"
+                      : `${settingsChanges} ${settingsChanges === 1 ? "alteração" : "alterações"}`}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  className="text-muted-foreground"
+                  onClick={() => setShowSettings(false)}
+                >
+                  Remover
+                </Button>
+              </>
+            )}
           </div>
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-            {(
-              [
-                ["layerHeightMm", "Camada", "mm"],
-                ["infillPercent", "Preench.", "%"],
-                ["walls", "Paredes", ""],
-                ["temperatureC", "Temp.", "°C"],
-              ] as const
-            ).map(([key, label, suffix]) => (
-              <div key={key} className="flex flex-col gap-2">
-                <Label htmlFor={`record-${key}`} className="whitespace-nowrap">
-                  {label}
-                  {changed[key] && <ChangedMark />}
-                </Label>
-                <SuffixInput
-                  id={`record-${key}`}
-                  suffix={suffix}
-                  value={settings[key]}
-                  onChange={(e) => setSetting(key, e.target.value)}
-                  className={changedFieldClass(changed[key])}
-                />
-              </div>
-            ))}
-          </div>
+          {showSettings ? (
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+              {(
+                [
+                  ["layerHeightMm", "Camada", "mm"],
+                  ["infillPercent", "Preench.", "%"],
+                  ["walls", "Paredes", ""],
+                  ["temperatureC", "Temp.", "°C"],
+                ] as const
+              ).map(([key, label, suffix]) => (
+                <div key={key} className="flex flex-col gap-2">
+                  <Label
+                    htmlFor={`record-${key}`}
+                    className="whitespace-nowrap"
+                  >
+                    {label}
+                    {changed[key] && <ChangedMark />}
+                  </Label>
+                  <SuffixInput
+                    id={`record-${key}`}
+                    suffix={suffix}
+                    value={settings[key]}
+                    onChange={(e) => setSetting(key, e.target.value)}
+                    className={changedFieldClass(changed[key])}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="self-start text-brand-300"
+              onClick={() => setShowSettings(true)}
+            >
+              <Plus />
+              Adicionar configuração do fatiador
+            </Button>
+          )}
         </div>
 
         <div className="flex flex-col gap-2.5">
@@ -532,12 +665,11 @@ function RecordForm({
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="failure-time">Tempo até parar</Label>
-                <Input
+                <DurationInput
                   id="failure-time"
-                  placeholder="0 h 09"
+                  label="Tempo até parar"
                   value={failureTime}
-                  onChange={(e) => setFailureTime(e.target.value)}
-                  className="tabular-nums"
+                  onChange={setFailureTime}
                 />
               </div>
             </div>
@@ -564,13 +696,15 @@ function RecordForm({
               </div>
             </div>
 
-            <label className="flex items-center gap-2.25 text-[12.5px]">
-              <Checkbox
-                checked={createJournalEntry}
-                onCheckedChange={(checked) => setCreateJournalEntry(checked)}
-              />
-              Criar entrada no Diário com este problema
-            </label>
+            {!isEditing && (
+              <label className="flex items-center gap-2.25 text-[12.5px]">
+                <Checkbox
+                  checked={createJournalEntry}
+                  onCheckedChange={(checked) => setCreateJournalEntry(checked)}
+                />
+                Criar entrada no Diário com este problema
+              </label>
+            )}
           </>
         )}
 
@@ -593,7 +727,9 @@ function RecordForm({
           >
             <CameraIcon className="size-4.25" aria-hidden="true" />
             <span className="text-[10.5px]">
-              {photos.length ? `${photos.length} fotos` : "Fotos"}
+              {photos.length
+                ? `${isEditing ? "+" : ""}${photos.length} fotos`
+                : "Fotos"}
             </span>
           </button>
           <div className="flex flex-col gap-2">
@@ -608,9 +744,31 @@ function RecordForm({
             />
           </div>
         </div>
-        {photos.length > 0 && (
+        {(savedPhotos.length > 0 || photos.length > 0) && (
           <div className="-mt-2 flex flex-wrap gap-1.5">
-            {photos.map((src, index) => (
+            {savedPhotos.map((photo, index) => (
+              <div key={photo.id} className="group relative size-12">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={photo.src}
+                  alt={`Foto salva ${index + 1}`}
+                  className="size-full rounded-sm object-cover"
+                />
+                <button
+                  type="button"
+                  aria-label={`Remover foto salva ${index + 1}`}
+                  onClick={() =>
+                    setSavedPhotos((prev) =>
+                      prev.filter((p) => p.id !== photo.id),
+                    )
+                  }
+                  className="absolute top-0.5 right-0.5 grid size-4 place-items-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                >
+                  <X className="size-2.5" />
+                </button>
+              </div>
+            ))}
+            {photos.map(({ preview: src }, index) => (
               <div key={src} className="group relative size-12">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -623,7 +781,7 @@ function RecordForm({
                   aria-label={`Remover foto ${index + 1}`}
                   onClick={() => {
                     URL.revokeObjectURL(src);
-                    setPhotos((prev) => prev.filter((p) => p !== src));
+                    setPhotos((prev) => prev.filter((p) => p.preview !== src));
                   }}
                   className="absolute top-0.5 right-0.5 grid size-4 place-items-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                 >
@@ -636,23 +794,29 @@ function RecordForm({
 
         {!isFailure && (
           <div className="flex flex-col gap-2.25 pb-2">
-            <label className="flex items-center gap-2.25 text-[12.5px]">
-              <Checkbox
-                checked={makeDefault}
-                onCheckedChange={(checked) => setMakeDefault(checked)}
-              />
-              Marcar como novo registro padrão
-            </label>
-            <div className="flex items-center gap-1.75 text-xs text-muted-foreground">
-              <GitBranch className="size-3.25" aria-hidden="true" />
-              Mudou a peça em si (escala, modelo)?
-              <Link
-                href={`/dashboard/impressoes/new?derivadoDe=${item.id}`}
-                className="text-brand-300 hover:underline"
-              >
-                Criar derivado
-              </Link>
-            </div>
+            {!(isEditing && isDefaultBase) && (
+              <label className="flex items-center gap-2.25 text-[12.5px]">
+                <Checkbox
+                  checked={makeDefault}
+                  onCheckedChange={(checked) => setMakeDefault(checked)}
+                />
+                {isEditing
+                  ? "Marcar como registro padrão"
+                  : "Marcar como novo registro padrão"}
+              </label>
+            )}
+            {!isEditing && (
+              <div className="flex items-center gap-1.75 text-xs text-muted-foreground">
+                <GitBranch className="size-3.25" aria-hidden="true" />
+                Mudou a peça em si (escala, modelo)?
+                <Link
+                  href={`/dashboard/impressoes/new?derivadoDe=${item.id}`}
+                  className="text-brand-300 hover:underline"
+                >
+                  Criar derivado
+                </Link>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -670,14 +834,9 @@ function RecordForm({
             {firstUsage && (
               <span className="ml-auto inline-flex items-center gap-1.5 tabular-nums">
                 <FilamentDot colors={firstUsage.filament.colors} />
-                {describePrintFilament(firstUsage.filament)}{" "}
-                {formatGrams(firstUsage.filament.remainingGrams)} →{" "}
-                {formatGrams(
-                  Math.max(
-                    0,
-                    firstUsage.filament.remainingGrams - firstUsage.grams,
-                  ),
-                )}
+                {describePrintFilament(firstUsage.filament)} ·{" "}
+                {formatGrams(firstUsage.grams)}
+                {recordUsages.length > 1 && ` +${recordUsages.length - 1}`}
               </span>
             )}
           </div>
@@ -691,6 +850,8 @@ function RecordForm({
           <span className="min-w-0 truncate text-[11.5px] text-muted-foreground">
             {isFailure ? (
               "Falhas não entram nas médias do item."
+            ) : isEditing ? (
+              "Os filamentos que já estavam mantêm o preço do dia."
             ) : (
               <>
                 O que mudou:{" "}
@@ -714,9 +875,11 @@ function RecordForm({
           >
             {isSaving
               ? "Salvando..."
-              : isFailure
-                ? "Salvar falha"
-                : "Salvar registro"}
+              : isEditing
+                ? "Salvar alterações"
+                : isFailure
+                  ? "Salvar falha"
+                  : "Salvar registro"}
           </Button>
         </div>
       </div>
@@ -729,7 +892,9 @@ export function PrintRecordSheet({
   open,
   onOpenChange,
   baseRecordId,
+  editRecordId,
   filaments,
+  costs,
   onSaved,
 }: {
   item: PrintItem;
@@ -737,12 +902,19 @@ export function PrintRecordSheet({
   onOpenChange: (open: boolean) => void;
   /** Registro de onde o formulário começa; padrão do item quando omitido. */
   baseRecordId?: string | null;
+  /** Com ele, o painel edita esse registro em vez de criar um novo. */
+  editRecordId?: string | null;
   filaments: PrintFilament[];
-  onSaved: (item: PrintItem) => void;
+  costs: CostContext;
+  /** photoError: o registro salvou, mas as fotos não foram enviadas. */
+  onSaved: (item: PrintItem, photoError: string | null) => void;
 }) {
   // Troca feita pelo "Usar outro"; some ao fechar.
   const [baseOverride, setBaseOverride] = useState<string | null>(null);
-  const baseId = baseOverride ?? baseRecordId ?? item.defaultRecordId;
+  const isEditing = !!editRecordId;
+  const baseId = isEditing
+    ? editRecordId
+    : (baseOverride ?? baseRecordId ?? item.defaultRecordId);
 
   function handleOpenChange(next: boolean) {
     if (!next) setBaseOverride(null);
@@ -762,14 +934,16 @@ export function PrintRecordSheet({
       >
         {open && base && (
           <RecordForm
-            key={base.id}
+            key={`${isEditing ? "editar" : "novo"}-${base.id}`}
             item={item}
             base={base}
+            isEditing={isEditing}
             filaments={filaments}
+            costs={costs}
             onChangeBase={setBaseOverride}
             onCancel={() => handleOpenChange(false)}
-            onSaved={(updated) => {
-              onSaved(updated);
+            onSaved={(updated, photoError) => {
+              onSaved(updated, photoError);
               handleOpenChange(false);
             }}
           />
