@@ -50,10 +50,13 @@ import {
 } from "@/lib/api/calibration";
 import {
   GUIDE_STEPS,
+  GUIDE_VIDEOS,
+  guideSteps,
   GuideContext,
   GuideStep,
   GuideStepId,
   filamentTemps,
+  forSlicer,
   formatTempRange,
   middleOf,
 } from "@/lib/calibration-guide";
@@ -151,10 +154,10 @@ function fromServerResults(progress: GuideProgress | null): Results {
   return out;
 }
 
-function stepIndexOf(id: string | undefined) {
+function stepIndexOf(steps: GuideStep[], id: string | undefined) {
   return Math.max(
     0,
-    GUIDE_STEPS.findIndex((s) => s.id === id),
+    steps.findIndex((s) => s.id === id),
   );
 }
 
@@ -279,6 +282,8 @@ export default function SlicerCalibrationPage() {
     filamentId && printerId ? { filamentId, printerId, slicer } : null;
   const keyId = progressKey ? `${filamentId}|${printerId}|${slicer}` : null;
   const isProgressReady = keyId !== null && loadedKey === keyId;
+  // A ordem dos testes muda com o fatiador.
+  const steps = guideSteps(slicer);
 
   useEffect(() => {
     Promise.all([listCalibrationFilaments(), listCalibrationPrinters()])
@@ -302,10 +307,11 @@ export default function SlicerCalibrationPage() {
       .then((progress) => {
         if (ignore) return;
         const loaded = fromServerResults(progress);
-        const index = stepIndexOf(progress?.activeStep);
+        const order = guideSteps(sl as Slicer);
+        const index = stepIndexOf(order, progress?.activeStep);
         lastSavedRef.current = JSON.stringify({
           results: toServerResults(loaded),
-          activeStep: GUIDE_STEPS[index].id,
+          activeStep: order[index].id,
         });
         setResults(loaded);
         setActiveIndex(index);
@@ -329,7 +335,7 @@ export default function SlicerCalibrationPage() {
   // Salva sozinho, um pouco depois da última mudança.
   useEffect(() => {
     if (!progressKey || !isProgressReady) return;
-    const activeStep = GUIDE_STEPS[activeIndex].id;
+    const activeStep = steps[activeIndex].id;
     const payload = toServerResults(results);
     const serialized = JSON.stringify({ results: payload, activeStep });
     if (serialized === lastSavedRef.current) return;
@@ -349,12 +355,12 @@ export default function SlicerCalibrationPage() {
   }, [results, activeIndex, isProgressReady]);
 
   const filament = filaments.find((f) => f.id === filamentId);
-  const step = GUIDE_STEPS[activeIndex];
+  const step = steps[activeIndex];
   const result = results[step.id] ?? { values: {}, done: false };
-  const doneCount = GUIDE_STEPS.filter((s) => results[s.id]?.done).length;
+  const doneCount = steps.filter((s) => results[s.id]?.done).length;
 
   // Valores anotados que entram na calibração.
-  const foundValues = GUIDE_STEPS.flatMap((s) => {
+  const foundValues = steps.flatMap((s) => {
     const r = results[s.id];
     if (!r?.done) return [];
     return s.fields.flatMap((f) => {
@@ -410,7 +416,7 @@ export default function SlicerCalibrationPage() {
       await resetGuideProgress(progressKey);
       lastSavedRef.current = JSON.stringify({
         results: {},
-        activeStep: GUIDE_STEPS[0].id,
+        activeStep: steps[0].id,
       });
       clearLocalProgress();
       setSaveState("idle");
@@ -428,7 +434,7 @@ export default function SlicerCalibrationPage() {
 
   function goTo(index: number) {
     setStepError(null);
-    setActiveIndex(Math.max(0, Math.min(GUIDE_STEPS.length - 1, index)));
+    setActiveIndex(Math.max(0, Math.min(steps.length - 1, index)));
   }
 
   if (isLoading) {
@@ -463,8 +469,8 @@ export default function SlicerCalibrationPage() {
           ),
         }
       : null;
-  const next = GUIDE_STEPS[activeIndex + 1];
-  const prev = GUIDE_STEPS[activeIndex - 1];
+  const next = steps[activeIndex + 1];
+  const prev = steps[activeIndex - 1];
   const canComplete = step.fields.every(
     (f) => (result.values[f.key] ?? "").trim() !== "",
   );
@@ -590,10 +596,10 @@ export default function SlicerCalibrationPage() {
                 />
               )}
               <span className="text-[11.5px] text-foreground/50 tabular-nums">
-                {doneCount} de {GUIDE_STEPS.length} testes
+                {doneCount} de {steps.length} testes
               </span>
               <span className="flex gap-0.75" aria-hidden="true">
-                {GUIDE_STEPS.map((s) => (
+                {steps.map((s) => (
                   <span
                     key={s.id}
                     className={cn(
@@ -628,7 +634,7 @@ export default function SlicerCalibrationPage() {
             className="flex min-w-0 flex-col gap-1.5 border-b bg-[#1a1c29] px-4 py-5 scrollbar-nocturne md:overflow-y-auto md:border-r md:border-b-0"
           >
             <CalLabel className="mb-1.5 px-2">Os testes</CalLabel>
-            {GUIDE_STEPS.map((s, index) => {
+            {steps.map((s, index) => {
               const r = results[s.id];
               const active = index === activeIndex;
               return (
@@ -690,7 +696,7 @@ export default function SlicerCalibrationPage() {
                     Referência:
                   </span>{" "}
                   <a
-                    href="https://www.youtube.com/watch?v=gVU5If1VsAM"
+                    href={GUIDE_VIDEOS[slicer]}
                     target="_blank"
                     rel="noreferrer"
                     className="text-brand-300 hover:underline"
@@ -713,11 +719,11 @@ export default function SlicerCalibrationPage() {
                   {step.testName && (
                     <span className="text-foreground/55">
                       {" "}
-                      ({step.testName})
+                      ({forSlicer(step.testName, slicer)})
                     </span>
                   )}
                 </h2>
-                <p className="text-[13px] text-foreground/55">{step.summary}</p>
+                <p className="text-[13px] text-foreground/55">{forSlicer(step.summary, slicer)}</p>
               </div>
             </div>
 
@@ -855,7 +861,7 @@ export default function SlicerCalibrationPage() {
               )}
             </form>
 
-            {step.tip && (
+            {step.tip?.[slicer] && (
               <div className="flex gap-2.5 rounded-md bg-[#e8c547]/8 px-3.5 py-3 text-[13px] leading-relaxed shadow-[inset_0_0_0_1px_color-mix(in_srgb,#e8c547_30%,transparent)]">
                 <Lightbulb
                   className="mt-0.5 size-4 shrink-0 text-[#e8c547]"
@@ -878,7 +884,7 @@ export default function SlicerCalibrationPage() {
                 />
                 Em dúvida?{" "}
                 <a
-                  href={step.video}
+                  href={forSlicer(step.video, slicer)}
                   target="_blank"
                   rel="noreferrer"
                   className="text-brand-300 hover:underline"
