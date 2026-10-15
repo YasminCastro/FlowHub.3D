@@ -158,11 +158,11 @@ export default function CatalogItemPage() {
         </Button>
         <Button
           variant="destructive"
-          size="icon-sm"
-          aria-label="Excluir do catálogo"
+          size="sm"
           onClick={() => setIsDeleteDialogOpen(true)}
         >
           <Trash2 />
+          Excluir
         </Button>
       </>
     ) : null,

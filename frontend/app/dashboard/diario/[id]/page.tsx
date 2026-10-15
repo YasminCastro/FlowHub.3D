@@ -191,11 +191,11 @@ export default function JournalEntryDetailPage() {
         </Button>
         <Button
           variant="destructive"
-          size="icon-sm"
-          aria-label="Excluir entrada"
+          size="sm"
           onClick={() => setIsDeleteDialogOpen(true)}
         >
           <Trash2 />
+          Excluir
         </Button>
       </div>
     ) : null,

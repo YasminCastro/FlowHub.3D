@@ -763,7 +763,7 @@ export function CatalogItemForm({
         )}
       </form>
 
-      <aside className="flex flex-col gap-3.5 rounded-lg bg-card px-4.5 py-4.5 shadow-[0_0_0_1px_var(--neutral-800)] lg:sticky lg:top-5">
+      <aside className="flex flex-col gap-3.5 rounded-lg bg-card px-4.5 py-4.5 shadow-[0_0_0_1px_var(--neutral-800)] lg:sticky lg:top-17">
         <SectionLabel>Cores disponíveis</SectionLabel>
         <span className="text-xs text-muted-foreground">
           {materials.length

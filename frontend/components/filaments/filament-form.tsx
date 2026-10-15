@@ -7,11 +7,10 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  CircleCheck,
   Minus,
   Plus,
 } from "lucide-react";
-import { ReactNode, useEffect, useRef, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -256,12 +255,9 @@ export function FilamentForm({
   const router = useRouter();
   const isEditing = !!filament;
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [brands, setBrands] = useState<Brand[] | null>(null);
   const [brandsError, setBrandsError] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
-  // Ref, não state: o clique e o submit acontecem no mesmo render.
-  const addAnotherRef = useRef(false);
 
   const form = useForm<FilamentFormValues>({
     resolver: zodResolver(filamentFormSchema),
@@ -309,25 +305,12 @@ export function FilamentForm({
       >
         Cancelar
       </Button>
-      {!isEditing && (
-        <Button
-          type="submit"
-          form={FORM_ID}
-          variant="secondary"
-          size="sm"
-          disabled={isSubmitting}
-          onClick={() => (addAnotherRef.current = true)}
-        >
-          Salvar e cadastrar outro
-        </Button>
-      )}
       <Button
         type="submit"
         form={FORM_ID}
         size="sm"
         disabled={isSubmitting}
         aria-busy={isSubmitting}
-        onClick={() => (addAnotherRef.current = false)}
       >
         {isSubmitting
           ? "Salvando..."
@@ -340,7 +323,6 @@ export function FilamentForm({
 
   async function handleSubmit(values: FilamentFormValues) {
     setSubmitError(null);
-    setSavedMessage(null);
     const input: FilamentInput = {
       brandId: values.brandId,
       type: values.type,
@@ -368,17 +350,7 @@ export function FilamentForm({
 
     try {
       const id = await onSubmit(input);
-      if (addAnotherRef.current && !isEditing) {
-        // Começa o próximo do zero, com o formulário em branco.
-        form.reset(toDefaultValues(null));
-        setSavedMessage(`${values.colorName} salvo. Pode cadastrar o próximo.`);
-        setNotesOpen(false);
-        document
-          .getElementById(FORM_ID)
-          ?.scrollIntoView({ behavior: "smooth", block: "start" });
-      } else {
-        router.push(`/dashboard/filamentos/${id}`);
-      }
+      router.push(`/dashboard/filamentos/${id}`);
     } catch (err) {
       setSubmitError(
         err instanceof ApiError
@@ -418,16 +390,6 @@ export function FilamentForm({
                 : "Uma cor que você comprou: marca, tipo e quanto pagou no rolo."}
             </p>
           </div>
-
-          {savedMessage && (
-            <p
-              role="status"
-              className="flex items-center gap-2 text-[12.5px] text-brand"
-            >
-              <CircleCheck className="size-3.5" aria-hidden="true" />
-              {savedMessage}
-            </p>
-          )}
 
           <div className="flex flex-col gap-4 sm:flex-row">
             <FormField

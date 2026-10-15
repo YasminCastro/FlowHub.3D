@@ -22,18 +22,10 @@ export default function NewJournalEntryPage() {
     router.push(`/dashboard/diario/${created.id}`);
   }
 
-  async function handleSubmitAndContinue(
-    input: JournalEntryInput,
-    photos: JournalPhotoChanges,
-  ) {
-    await saveJournalEntry(null, input, photos);
-  }
-
   return (
     <JournalEntryForm
       cancelHref="/dashboard/diario"
       onSubmit={handleSubmit}
-      onSubmitAndContinue={handleSubmitAndContinue}
       breadcrumb={
         <>
           <Link

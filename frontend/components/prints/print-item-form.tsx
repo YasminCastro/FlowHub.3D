@@ -141,6 +141,17 @@ function draftFromParent(parent: PrintItem, record: PrintRecord): Draft {
   };
 }
 
+// Duplicado: cópia do item, ligada à mesma origem dele (não a ele).
+function draftFromCopy(source: PrintItem, record: PrintRecord): Draft {
+  return {
+    ...draftFromParent(source, record),
+    name: `${source.name} (cópia)`,
+    modelUrl: source.modelUrl ?? "",
+    parentId: source.derivedFrom?.id ?? NO_PARENT,
+    note: record.note ?? "",
+  };
+}
+
 function Step({
   n,
   title,
@@ -191,6 +202,7 @@ export function PrintItemForm() {
   const searchParams = useSearchParams();
   const parentParam = searchParams.get("derivadoDe");
   const recordParam = searchParams.get("registro");
+  const copyParam = searchParams.get("duplicarDe");
 
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [items, setItems] = useState<PrintItem[]>([]);
@@ -215,15 +227,21 @@ export function PrintItemForm() {
       .catch(() => setCategories([]));
     listPrintItems().then((result) => {
       setItems(result);
-      const parent = result.find((item) => item.id === parentParam);
-      if (!parent) return;
+      const source = result.find(
+        (item) => item.id === (copyParam ?? parentParam),
+      );
+      if (!source) return;
       const record =
-        parent.records.find((r) => r.id === recordParam) ??
-        getDefaultRecord(parent);
-      setDraft(draftFromParent(parent, record));
+        source.records.find((r) => r.id === recordParam) ??
+        getDefaultRecord(source);
+      setDraft(
+        copyParam
+          ? draftFromCopy(source, record)
+          : draftFromParent(source, record),
+      );
       if (record.settings?.extras) setShowExtras(true);
     });
-  }, [parentParam, recordParam]);
+  }, [copyParam, parentParam, recordParam]);
 
   function set<K extends keyof Draft>(key: K, value: Draft[K]) {
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -800,7 +818,7 @@ export function PrintItemForm() {
         )}
       </form>
 
-      <aside className="flex flex-col gap-4 rounded-lg bg-card px-4.5 py-4.5 shadow-[0_0_0_1px_var(--neutral-800)] lg:sticky lg:top-5">
+      <aside className="flex flex-col gap-4 rounded-lg bg-card px-4.5 py-4.5 shadow-[0_0_0_1px_var(--neutral-800)] lg:sticky lg:top-17">
         <SectionLabel>Por unidade</SectionLabel>
         <div className="flex items-stretch gap-4.5">
           <div className="flex flex-col gap-1.25">

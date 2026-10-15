@@ -3,14 +3,13 @@
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
-  ChevronLeft,
   ChevronRight,
   Pencil,
   Plus,
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,13 +31,11 @@ import { PURCHASE_CHANNEL_LABELS } from "@/lib/api/brand";
 import {
   FILAMENT_AVAILABILITY_LABELS,
   SPOOL_LEVEL_LABELS,
-  Filament,
   FilamentUpdateInput,
   addFilamentNote,
   formatRating,
   formatSpoolWeight,
   getPricePerKg,
-  listFilaments,
   updateFilament,
 } from "@/lib/api/filament";
 import { cn, formatBRL, formatDatePtBR } from "@/lib/utils";
@@ -62,17 +59,6 @@ function formatTempRange(min: number | null, max: number | null) {
   return `${min} – ${max} °C`;
 }
 
-// Mesma ordem padrão da lista (por nome, acabados no fim), para o
-// anterior/próximo andar pelos filamentos na ordem em que você os vê.
-function navigationOrder(filaments: Filament[]) {
-  return [...filaments].sort((a, b) => {
-    const finishedA = a.spoolLevel === "FINISHED";
-    const finishedB = b.spoolLevel === "FINISHED";
-    if (finishedA !== finishedB) return finishedA ? 1 : -1;
-    return a.colorName.localeCompare(b.colorName, "pt-BR");
-  });
-}
-
 export default function FilamentDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -81,27 +67,12 @@ export default function FilamentDetailPage() {
   const { filament, setFilament, isLoading, loadError } = useFilament(
     params.id,
   );
-  const [siblings, setSiblings] = useState<Filament[]>([]);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isRebuyDialogOpen, setIsRebuyDialogOpen] = useState(recomprar === "1");
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let ignore = false;
-    listFilaments()
-      .then((result) => {
-        if (!ignore) setSiblings(navigationOrder(result));
-      })
-      .catch(() => {
-        if (!ignore) setSiblings([]);
-      });
-    return () => {
-      ignore = true;
-    };
-  }, []);
 
   async function applyUpdate(input: FilamentUpdateInput) {
     if (!filament) return;
@@ -141,11 +112,6 @@ export default function FilamentDetailPage() {
     }
   }
 
-  const index = siblings.findIndex((item) => item.id === params.id);
-  const previous = index > 0 ? siblings[index - 1] : null;
-  const next =
-    index >= 0 && index < siblings.length - 1 ? siblings[index + 1] : null;
-
   usePageHeaderBreadcrumb(
     filament ? (
       <>
@@ -166,36 +132,8 @@ export default function FilamentDetailPage() {
 
   usePageHeaderAction(
     filament ? (
-      <div className="flex items-center gap-1.5">
-        {previous && (
-          <Button
-            variant="outline"
-            size="sm"
-            render={<Link href={`/dashboard/filamentos/${previous.id}`} />}
-            nativeButton={false}
-            aria-label={`Filamento anterior: ${previous.colorName}`}
-          >
-            <ChevronLeft />
-            <span className="max-w-32 truncate">{previous.colorName}</span>
-          </Button>
-        )}
-        {next && (
-          <Button
-            variant="outline"
-            size="sm"
-            render={<Link href={`/dashboard/filamentos/${next.id}`} />}
-            nativeButton={false}
-            aria-label={`Próximo filamento: ${next.colorName}`}
-          >
-            <span className="max-w-32 truncate">{next.colorName}</span>
-            <ChevronRight />
-          </Button>
-        )}
-        {(previous || next) && (
-          <Separator orientation="vertical" className="mx-1 h-5" />
-        )}
+      <>
         <Button
-          variant="outline"
           size="sm"
           render={<Link href={`/dashboard/filamentos/${filament.id}/edit`} />}
           nativeButton={false}
@@ -204,14 +142,14 @@ export default function FilamentDetailPage() {
           Editar
         </Button>
         <Button
-          variant="outline"
-          size="icon-sm"
-          aria-label="Excluir filamento"
+          variant="destructive"
+          size="sm"
           onClick={() => setIsDeleteDialogOpen(true)}
         >
           <Trash2 />
+          Excluir
         </Button>
-      </div>
+      </>
     ) : null,
   );
 

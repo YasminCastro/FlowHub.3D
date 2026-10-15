@@ -29,6 +29,12 @@ const CALIBRATION_TABS = [
   { title: "Por fatiador", url: "/dashboard/fatiadores" },
 ];
 
+// Compara por segmento: "/dashboard/fila" não pode casar com
+// "/dashboard/filamentos".
+function isInSection(pathname: string, url: string) {
+  return pathname === url || pathname.startsWith(`${url}/`);
+}
+
 export function DashboardHeader() {
   const pathname = usePathname();
   const router = useRouter();
@@ -36,25 +42,25 @@ export function DashboardHeader() {
   const headerAction = usePageHeaderActionSlot();
   const breadcrumb = usePageHeaderBreadcrumbSlot();
 
-  const isPerfil = pathname.startsWith("/dashboard/perfil");
+  const isPerfil = isInSection(pathname, "/dashboard/perfil");
   const isConfigSection = CONFIG_TABS.some((tab) =>
-    pathname.startsWith(tab.url),
+    isInSection(pathname, tab.url),
   );
 
   const isEquipamentSection = EQUIPAMENT_TABS.some((tab) =>
-    pathname.startsWith(tab.url),
+    isInSection(pathname, tab.url),
   );
 
-  const isJournalSection = pathname.startsWith("/dashboard/diario");
-  const isPrintSection = pathname.startsWith("/dashboard/impressoes");
-  const isQueueSection = pathname.startsWith("/dashboard/fila");
-  const isCatalogSection = pathname.startsWith("/dashboard/catalogo");
+  const isJournalSection = isInSection(pathname, "/dashboard/diario");
+  const isPrintSection = isInSection(pathname, "/dashboard/impressoes");
+  const isQueueSection = isInSection(pathname, "/dashboard/fila");
+  const isCatalogSection = isInSection(pathname, "/dashboard/catalogo");
   const isCalibrationSection = CALIBRATION_TABS.some((tab) =>
-    pathname.startsWith(tab.url),
+    isInSection(pathname, tab.url),
   );
 
   return (
-    <header className="flex h-12 items-center gap-2 border-b px-3">
+    <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-2 border-b bg-background px-3">
       <SidebarTrigger />
       {isPerfil && (
         <>
@@ -86,7 +92,7 @@ export function DashboardHeader() {
           ) : (
             <nav className="flex h-full items-stretch gap-4">
               {CONFIG_TABS.map((tab) => {
-                const isActive = pathname.startsWith(tab.url);
+                const isActive = isInSection(pathname, tab.url);
                 return (
                   <Link
                     key={tab.url}
@@ -115,7 +121,7 @@ export function DashboardHeader() {
           ) : (
             <nav className="flex h-full items-stretch gap-4">
               {EQUIPAMENT_TABS.map((tab) => {
-                const isActive = pathname.startsWith(tab.url);
+                const isActive = isInSection(pathname, tab.url);
                 return (
                   <Link
                     key={tab.url}
@@ -202,7 +208,7 @@ export function DashboardHeader() {
           ) : (
             <nav className="flex h-full items-stretch gap-4">
               {CALIBRATION_TABS.map((tab) => {
-                const isActive = pathname.startsWith(tab.url);
+                const isActive = isInSection(pathname, tab.url);
                 return (
                   <Link
                     key={tab.url}

@@ -76,8 +76,6 @@ export type ExtraItemFormProps = {
   breadcrumb: ReactNode;
   cancelHref: string;
   onSubmit: (input: ExtraItemInput) => Promise<void>;
-  /** Só na criação: salva e limpa o formulário para o próximo item. */
-  onSubmitAndContinue?: (input: ExtraItemInput) => Promise<void>;
 };
 
 export function ExtraItemForm({
@@ -85,12 +83,10 @@ export function ExtraItemForm({
   breadcrumb,
   cancelHref,
   onSubmit,
-  onSubmitAndContinue,
 }: ExtraItemFormProps) {
   const router = useRouter();
   const isEditing = !!item;
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [savedName, setSavedName] = useState<string | null>(null);
   const [otherItems, setOtherItems] = useState<ExtraItem[] | null>(null);
 
   const form = useForm<ExtraItemFormValues>({
@@ -104,7 +100,7 @@ export function ExtraItemForm({
         setOtherItems(items.filter((other) => other.id !== item?.id)),
       )
       .catch(() => setOtherItems(null));
-  }, [item?.id, savedName]);
+  }, [item?.id]);
 
   function toInput(values: ExtraItemFormValues): ExtraItemInput {
     const lotQuantity = Number(values.lotQuantity);
@@ -124,7 +120,6 @@ export function ExtraItemForm({
     values: ExtraItemFormValues,
   ) {
     setSubmitError(null);
-    setSavedName(null);
     try {
       await handler(toInput(values));
       return true;
@@ -152,27 +147,6 @@ export function ExtraItemForm({
       >
         Cancelar
       </Button>
-      {onSubmitAndContinue && (
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          disabled={isSubmitting}
-          onClick={form.handleSubmit(async (values) => {
-            const ok = await submitWith(onSubmitAndContinue, values);
-            if (!ok) return;
-            setSavedName(values.name.trim());
-            // Mantém a data: costuma ser a mesma compra.
-            form.reset({
-              ...toDefaultValues(),
-              purchasedAt: values.purchasedAt,
-            });
-            form.setFocus("name");
-          })}
-        >
-          Salvar e cadastrar outro
-        </Button>
-      )}
       <Button
         type="submit"
         form={FORM_ID}
@@ -216,15 +190,6 @@ export function ExtraItemForm({
               Comprado em lote, usado por unidade. O unitário é calculado.
             </p>
           </div>
-
-          {savedName && (
-            <p
-              role="status"
-              className="rounded-md border border-brand/40 bg-brand/8 px-3 py-2 text-[12.5px] text-brand-300"
-            >
-              &ldquo;{savedName}&rdquo; salvo. Pode cadastrar o próximo.
-            </p>
-          )}
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
             <FormField

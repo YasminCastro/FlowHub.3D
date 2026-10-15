@@ -795,7 +795,7 @@ export function QueueCompleteForm({ entryId }: { entryId: string }) {
         )}
       </form>
 
-      <aside className="flex flex-col gap-4 rounded-lg bg-card px-4.5 py-4.5 shadow-[0_0_0_1px_var(--neutral-800)] lg:sticky lg:top-5">
+      <aside className="flex flex-col gap-4 rounded-lg bg-card px-4.5 py-4.5 shadow-[0_0_0_1px_var(--neutral-800)] lg:sticky lg:top-17">
         <SectionLabel>Ao salvar</SectionLabel>
         <div className="flex flex-col gap-2.5 text-[12.5px] text-foreground/70">
           {isFailure ? (

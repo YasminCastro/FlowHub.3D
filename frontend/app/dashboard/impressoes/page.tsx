@@ -4,7 +4,6 @@ import Link from "next/link";
 import {
   ArrowUpDown,
   ImagesIcon,
-  ListOrdered,
   Plus,
   Search,
   TriangleAlert,
@@ -137,25 +136,14 @@ export default function PrintsPage() {
   }, []);
 
   usePageHeaderAction(
-    <>
-      <Button
-        variant="secondary"
-        size="sm"
-        render={<Link href="/dashboard/fila/new" />}
-        nativeButton={false}
-      >
-        <ListOrdered />
-        Adicionar à fila
-      </Button>
-      <Button
-        size="sm"
-        render={<Link href="/dashboard/impressoes/new" />}
-        nativeButton={false}
-      >
-        <Plus />
-        Nova impressão
-      </Button>
-    </>,
+    <Button
+      size="sm"
+      render={<Link href="/dashboard/impressoes/new" />}
+      nativeButton={false}
+    >
+      <Plus />
+      Nova impressão
+    </Button>,
   );
 
   const now = new Date();
@@ -352,13 +340,6 @@ export default function PrintsPage() {
       </div>
 
       {renderContent()}
-
-      {!isLoading && visibleItems.length > 0 && (
-        <p className="text-[11.5px] text-muted-foreground/80">
-          O valor no card é o custo por unidade do registro padrão. O preço de
-          venda fica no Catálogo.
-        </p>
-      )}
     </div>
   );
 }

@@ -15,15 +15,10 @@ export default function NewExtraItemPage() {
     router.push(`/dashboard/itens-extras/${created.id}`);
   }
 
-  async function handleSubmitAndContinue(input: ExtraItemInput) {
-    await createExtraItem(input);
-  }
-
   return (
     <ExtraItemForm
       cancelHref="/dashboard/itens-extras"
       onSubmit={handleSubmit}
-      onSubmitAndContinue={handleSubmitAndContinue}
       breadcrumb={
         <>
           <Link

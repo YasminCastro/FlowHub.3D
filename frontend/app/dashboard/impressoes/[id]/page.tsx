@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ChevronRight,
+  Copy,
   GitBranch,
   ImageIcon,
   LinkIcon,
@@ -169,12 +170,12 @@ export default function PrintItemPage() {
           variant="ghost"
           size="sm"
           render={
-            <Link href={`/dashboard/impressoes/new?derivadoDe=${item.id}`} />
+            <Link href={`/dashboard/impressoes/new?duplicarDe=${item.id}`} />
           }
           nativeButton={false}
         >
-          <GitBranch />
-          Criar derivado
+          <Copy />
+          Duplicar
         </Button>
         <Button
           variant="secondary"
@@ -191,11 +192,11 @@ export default function PrintItemPage() {
         </Button>
         <Button
           variant="destructive"
-          size="icon-sm"
-          aria-label="Excluir impressão"
+          size="sm"
           onClick={() => setIsDeleteDialogOpen(true)}
         >
           <Trash2 />
+          Excluir
         </Button>
       </>
     ) : null,

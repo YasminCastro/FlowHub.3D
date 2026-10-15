@@ -138,8 +138,6 @@ export type JournalEntryFormProps = {
   breadcrumb: ReactNode;
   cancelHref: string;
   onSubmit: SubmitHandler;
-  /** Só na criação: salva e limpa o formulário para a próxima entrada. */
-  onSubmitAndContinue?: SubmitHandler;
 };
 
 type SubmitHandler = (
@@ -155,12 +153,10 @@ export function JournalEntryForm({
   breadcrumb,
   cancelHref,
   onSubmit,
-  onSubmitAndContinue,
 }: JournalEntryFormProps) {
   const router = useRouter();
   const isEditing = !!entry;
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [savedTitle, setSavedTitle] = useState<string | null>(null);
   const [savedPhotos, setSavedPhotos] = useState<JournalPhoto[]>(
     entry?.photos ?? [],
   );
@@ -185,7 +181,7 @@ export function JournalEntryForm({
     listJournalEntries()
       .then(setAllEntries)
       .catch(() => setAllEntries([]));
-  }, [savedTitle]);
+  }, []);
 
   useEffect(() => {
     listFilaments()
@@ -216,11 +212,6 @@ export function JournalEntryForm({
     };
   }
 
-  function clearPendingPhotos() {
-    pendingPhotos.forEach((photo) => URL.revokeObjectURL(photo.preview));
-    setPendingPhotos([]);
-  }
-
   function toInput(values: JournalFormValues): JournalEntryInput {
     const filledAttempts = values.attempts.filter((attempt) =>
       attempt.description.trim(),
@@ -248,7 +239,6 @@ export function JournalEntryForm({
     values: JournalFormValues,
   ) {
     setSubmitError(null);
-    setSavedTitle(null);
     try {
       await handler(toInput(values), photoChanges());
       return true;
@@ -336,24 +326,6 @@ export function JournalEntryForm({
       >
         Cancelar
       </Button>
-      {onSubmitAndContinue && (
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          disabled={isSubmitting}
-          onClick={form.handleSubmit(async (values) => {
-            const ok = await submitWith(onSubmitAndContinue, values);
-            if (!ok) return;
-            setSavedTitle(values.title.trim());
-            clearPendingPhotos();
-            form.reset(toDefaultValues());
-            form.setFocus("title");
-          })}
-        >
-          Salvar e criar outra
-        </Button>
-      )}
       <Button
         type="submit"
         form={FORM_ID}
@@ -398,15 +370,6 @@ export function JournalEntryForm({
               Descreva o problema, o que você suspeita e cada coisa que testou.
             </p>
           </div>
-
-          {savedTitle && (
-            <p
-              role="status"
-              className="rounded-md border border-brand/40 bg-brand/8 px-3 py-2 text-[12.5px] text-brand-300"
-            >
-              &ldquo;{savedTitle}&rdquo; salva. Pode registrar a próxima.
-            </p>
-          )}
 
           <section className="flex flex-col gap-4">
             <span className="text-xs tracking-wide text-muted-foreground uppercase">

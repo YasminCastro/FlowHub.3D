@@ -481,7 +481,7 @@ export function QueueEntryForm() {
         )}
       </form>
 
-      <aside className="flex flex-col gap-4 rounded-lg bg-card px-4.5 py-4.5 shadow-[0_0_0_1px_var(--neutral-800)] lg:sticky lg:top-5">
+      <aside className="flex flex-col gap-4 rounded-lg bg-card px-4.5 py-4.5 shadow-[0_0_0_1px_var(--neutral-800)] lg:sticky lg:top-17">
         <SectionLabel>Orçamento</SectionLabel>
         <div className="flex items-stretch gap-4.5">
           <div className="flex flex-col gap-1.25">
