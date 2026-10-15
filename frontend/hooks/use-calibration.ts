@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { ApiError } from "@/lib/api/auth";
+import { isNotFoundError } from "@/lib/api/client";
 import {
   Calibration,
   CalibrationDetail,
@@ -16,6 +17,7 @@ export function useCalibration(id: string | null) {
   const [all, setAll] = useState<Calibration[]>([]);
   const [isLoading, setIsLoading] = useState(!!id);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isNotFound, setIsNotFound] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -27,12 +29,13 @@ export function useCalibration(id: string | null) {
         setAll(list);
       })
       .catch((err) => {
-        if (!ignore)
-          setLoadError(
-            err instanceof ApiError
-              ? err.message
-              : "Não foi possível carregar a calibração.",
-          );
+        if (ignore) return;
+        setIsNotFound(isNotFoundError(err));
+        setLoadError(
+          err instanceof ApiError
+            ? err.message
+            : "Não foi possível carregar a calibração.",
+        );
       })
       .finally(() => {
         if (!ignore) setIsLoading(false);
@@ -42,5 +45,5 @@ export function useCalibration(id: string | null) {
     };
   }, [id]);
 
-  return { calibration, all, isLoading, loadError };
+  return { calibration, all, isLoading, loadError, isNotFound };
 }

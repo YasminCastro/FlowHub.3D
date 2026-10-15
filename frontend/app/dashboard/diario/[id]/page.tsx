@@ -25,6 +25,7 @@ import {
   FilamentDot,
   JournalStatusBadge,
 } from "@/components/journal/journal-status-badge";
+import { NotFoundState } from "@/components/dashboard/not-found-state";
 import {
   usePageHeaderAction,
   usePageHeaderBreadcrumb,
@@ -149,7 +150,7 @@ function describeResolution(entry: JournalEntry) {
 export default function JournalEntryDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { entry, isLoading, loadError } = useJournalEntry(params.id);
+  const { entry, isLoading, loadError, isNotFound } = useJournalEntry(params.id);
   const [allEntries, setAllEntries] = useState<JournalEntry[]>([]);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
@@ -210,6 +211,8 @@ export default function JournalEntryDetailPage() {
       </div>
     );
   }
+
+  if (isNotFound) return <NotFoundState resource="diario" />;
 
   if (loadError || !entry) {
     return (

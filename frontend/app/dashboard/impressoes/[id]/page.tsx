@@ -34,6 +34,7 @@ import {
   nextRecordSort,
   sortRecords,
 } from "@/components/prints/print-records-table";
+import { NotFoundState } from "@/components/dashboard/not-found-state";
 import {
   usePageHeaderAction,
   usePageHeaderBreadcrumb,
@@ -104,6 +105,7 @@ export default function PrintItemPage() {
     setItem,
     isLoading: isLoadingItem,
     loadError: itemError,
+    isNotFound,
   } = usePrintItem(params.id);
   const { costs, loadError: costsError } = useCostContext();
   const isLoading = isLoadingItem || (!costs && !costsError);
@@ -216,6 +218,8 @@ export default function PrintItemPage() {
       </div>
     );
   }
+
+  if (isNotFound) return <NotFoundState resource="impressoes" />;
 
   if (loadError || !item || !costs) {
     return (

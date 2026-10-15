@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 
 import { ApiError } from "@/lib/api/auth";
+import { isNotFoundError } from "@/lib/api/client";
 import { FilamentWithDetails, getFilament } from "@/lib/api/filament";
 
 export function useFilament(id: string) {
   const [filament, setFilament] = useState<FilamentWithDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isNotFound, setIsNotFound] = useState(false);
 
   useEffect(() => {
     let ignore = false;
@@ -14,11 +16,13 @@ export function useFilament(id: string) {
     async function loadFilament() {
       setIsLoading(true);
       setLoadError(null);
+      setIsNotFound(false);
       try {
         const result = await getFilament(id);
         if (!ignore) setFilament(result);
       } catch (err) {
         if (!ignore) {
+          setIsNotFound(isNotFoundError(err));
           setLoadError(
             err instanceof ApiError || err instanceof Error
               ? err.message
@@ -36,5 +40,5 @@ export function useFilament(id: string) {
     };
   }, [id]);
 
-  return { filament, setFilament, isLoading, loadError };
+  return { filament, setFilament, isLoading, loadError, isNotFound };
 }

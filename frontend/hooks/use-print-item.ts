@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 
 import { ApiError } from "@/lib/api/auth";
+import { isNotFoundError } from "@/lib/api/client";
 import { PrintItem, getPrintItem } from "@/lib/api/print";
 
 export function usePrintItem(id: string) {
   const [item, setItem] = useState<PrintItem | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isNotFound, setIsNotFound] = useState(false);
 
   useEffect(() => {
     let ignore = false;
@@ -14,11 +16,13 @@ export function usePrintItem(id: string) {
     async function loadItem() {
       setIsLoading(true);
       setLoadError(null);
+      setIsNotFound(false);
       try {
         const result = await getPrintItem(id);
         if (!ignore) setItem(result);
       } catch (err) {
         if (!ignore) {
+          setIsNotFound(isNotFoundError(err));
           setLoadError(
             err instanceof ApiError
               ? err.message
@@ -36,5 +40,5 @@ export function usePrintItem(id: string) {
     };
   }, [id]);
 
-  return { item, setItem, isLoading, loadError };
+  return { item, setItem, isLoading, loadError, isNotFound };
 }

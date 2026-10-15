@@ -4,12 +4,13 @@ import { useParams } from "next/navigation";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { CatalogItemForm } from "@/components/catalog/catalog-item-form";
+import { NotFoundState } from "@/components/dashboard/not-found-state";
 import { useCatalogItem } from "@/hooks/use-catalog-item";
 import { updateCatalogItem } from "@/lib/api/catalog";
 
 export default function EditCatalogItemPage() {
   const params = useParams<{ id: string }>();
-  const { item, isLoading, loadError } = useCatalogItem(params.id);
+  const { item, isLoading, loadError, isNotFound } = useCatalogItem(params.id);
 
   if (isLoading) {
     return (
@@ -19,6 +20,8 @@ export default function EditCatalogItemPage() {
       </div>
     );
   }
+
+  if (isNotFound) return <NotFoundState resource="catalogo" />;
 
   if (loadError || !item) {
     return (

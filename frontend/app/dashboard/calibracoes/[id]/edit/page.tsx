@@ -6,6 +6,7 @@ import { ChevronRight } from "lucide-react";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { CalibrationForm } from "@/components/calibrations/calibration-form";
+import { NotFoundState } from "@/components/dashboard/not-found-state";
 import { useCalibration } from "@/hooks/use-calibration";
 import {
   CalibrationInput,
@@ -16,7 +17,7 @@ import {
 export default function EditCalibrationPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { calibration, isLoading, loadError } = useCalibration(params.id);
+  const { calibration, isLoading, loadError, isNotFound } = useCalibration(params.id);
 
   if (isLoading) {
     return (
@@ -26,6 +27,8 @@ export default function EditCalibrationPage() {
       </div>
     );
   }
+
+  if (isNotFound) return <NotFoundState resource="calibracoes" />;
 
   if (loadError || !calibration) {
     return (

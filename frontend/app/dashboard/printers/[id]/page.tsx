@@ -21,6 +21,7 @@ import { PrinterMaintenanceDetailDialog } from "@/components/printers/printer-ma
 import { PrinterMaintenanceDialog } from "@/components/printers/printer-maintenance-dialog";
 import { PrinterMaintenanceHistory } from "@/components/printers/printer-maintenance-history";
 import { PrinterSpecCard } from "@/components/printers/printer-spec-card";
+import { NotFoundState } from "@/components/dashboard/not-found-state";
 import {
   usePageHeaderAction,
   usePageHeaderBreadcrumb,
@@ -33,7 +34,7 @@ import { formatDatePtBR } from "@/lib/utils";
 export default function PrinterDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { printer, isLoading, loadError, reload } = usePrinter(params.id);
+  const { printer, isLoading, loadError, isNotFound, reload } = usePrinter(params.id);
   const maintenanceHistory = usePrinterMaintenances(params.id);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isMaintenanceDialogOpen, setIsMaintenanceDialogOpen] =
@@ -115,6 +116,8 @@ export default function PrinterDetailPage() {
       </div>
     );
   }
+
+  if (isNotFound) return <NotFoundState resource="impressoras" />;
 
   if (loadError || !printer) {
     return (

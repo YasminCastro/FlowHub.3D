@@ -26,6 +26,7 @@ import {
   CopyValuesButton,
 } from "@/components/calibrations/calibration-bits";
 import { CalibrationDeleteDialog } from "@/components/calibrations/calibration-delete-dialog";
+import { NotFoundState } from "@/components/dashboard/not-found-state";
 import {
   usePageHeaderAction,
   usePageHeaderBreadcrumb,
@@ -209,7 +210,7 @@ function VersionHistory({ calibration }: { calibration: Calibration }) {
 export default function CalibrationDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { calibration, all, isLoading, loadError } = useCalibration(params.id);
+  const { calibration, all, isLoading, loadError, isNotFound } = useCalibration(params.id);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   const title = calibration
@@ -268,6 +269,8 @@ export default function CalibrationDetailPage() {
       </div>
     );
   }
+
+  if (isNotFound) return <NotFoundState resource="calibracoes" />;
 
   if (loadError || !calibration) {
     return (

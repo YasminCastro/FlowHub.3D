@@ -6,6 +6,7 @@ import { ChevronRight } from "lucide-react";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { JournalEntryForm } from "@/components/journal/journal-entry-form";
+import { NotFoundState } from "@/components/dashboard/not-found-state";
 import { useJournalEntry } from "@/hooks/use-journal-entry";
 import {
   JournalEntryInput,
@@ -16,7 +17,7 @@ import {
 export default function EditJournalEntryPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { entry, isLoading, loadError } = useJournalEntry(params.id);
+  const { entry, isLoading, loadError, isNotFound } = useJournalEntry(params.id);
   const detailHref = `/dashboard/diario/${params.id}`;
 
   async function handleSubmit(
@@ -35,6 +36,8 @@ export default function EditJournalEntryPage() {
       </div>
     );
   }
+
+  if (isNotFound) return <NotFoundState resource="diario" />;
 
   if (loadError || !entry) {
     return (

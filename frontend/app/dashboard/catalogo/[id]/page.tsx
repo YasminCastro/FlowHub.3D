@@ -34,6 +34,7 @@ import {
   Stat,
   StatDivider,
 } from "@/components/prints/print-bits";
+import { NotFoundState } from "@/components/dashboard/not-found-state";
 import {
   usePageHeaderAction,
   usePageHeaderBreadcrumb,
@@ -65,6 +66,7 @@ export default function CatalogItemPage() {
     item,
     isLoading: isLoadingItem,
     loadError: itemError,
+    isNotFound,
   } = useCatalogItem(params.id);
   const {
     data,
@@ -181,6 +183,8 @@ export default function CatalogItemPage() {
       </div>
     );
   }
+
+  if (isNotFound) return <NotFoundState resource="catalogo" />;
 
   if (loadError || !item || !resolved || !data) {
     return (

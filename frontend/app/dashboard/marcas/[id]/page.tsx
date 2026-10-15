@@ -26,6 +26,7 @@ import {
   formatFilamentCount,
 } from "@/components/brands/brand-row-preview";
 import { FilamentCard } from "@/components/filaments/filament-card";
+import { NotFoundState } from "@/components/dashboard/not-found-state";
 import {
   usePageHeaderAction,
   usePageHeaderBreadcrumb,
@@ -156,7 +157,7 @@ function buildPurchaseStats(
 export default function BrandDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { brand, setBrand, isLoading, loadError } = useBrand(params.id);
+  const { brand, setBrand, isLoading, loadError, isNotFound } = useBrand(params.id);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -258,6 +259,8 @@ export default function BrandDetailPage() {
       </div>
     );
   }
+
+  if (isNotFound) return <NotFoundState resource="marcas" />;
 
   if (loadError || !brand) {
     return (

@@ -6,8 +6,10 @@ import { ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { NotFoundState } from "@/components/dashboard/not-found-state";
 import { PrinterForm } from "@/components/printers/printer-form";
 import { ApiError } from "@/lib/api/auth";
+import { isNotFoundError } from "@/lib/api/client";
 import { Printer, PrinterInput, getPrinter, updatePrinter } from "@/lib/api/printer";
 
 export default function EditPrinterPage() {
@@ -16,6 +18,7 @@ export default function EditPrinterPage() {
   const [printer, setPrinter] = useState<Printer | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isNotFound, setIsNotFound] = useState(false);
 
   useEffect(() => {
     loadPrinter();
@@ -25,9 +28,11 @@ export default function EditPrinterPage() {
   async function loadPrinter() {
     setIsLoading(true);
     setLoadError(null);
+    setIsNotFound(false);
     try {
       setPrinter(await getPrinter(params.id));
     } catch (err) {
+      setIsNotFound(isNotFoundError(err));
       setLoadError(
         err instanceof ApiError
           ? err.message
@@ -53,6 +58,8 @@ export default function EditPrinterPage() {
       </div>
     );
   }
+
+  if (isNotFound) return <NotFoundState resource="impressoras" />;
 
   if (loadError || !printer) {
     return (

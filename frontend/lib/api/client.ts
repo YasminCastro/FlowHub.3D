@@ -1,6 +1,18 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
-export class ApiError extends Error {}
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message);
+  }
+}
+
+/** O backend responde 404 quando o registro não existe ou não é do usuário. */
+export function isNotFoundError(err: unknown) {
+  return err instanceof ApiError && err.status === 404;
+}
 
 // Access token lives only in memory (never localStorage) so it can't be
 // read by an XSS payload. Session persistence across reloads comes from
@@ -35,7 +47,7 @@ async function parseResponse(res: Response) {
     const message = Array.isArray(data?.message)
       ? data.message.join(", ")
       : (data?.message ?? "Não foi possível completar a requisição.");
-    throw new ApiError(message);
+    throw new ApiError(message, res.status);
   }
 
   return data;

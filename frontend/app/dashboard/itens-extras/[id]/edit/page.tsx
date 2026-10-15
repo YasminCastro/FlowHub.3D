@@ -6,13 +6,14 @@ import { ChevronRight } from "lucide-react";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { ExtraItemForm } from "@/components/extra-items/extra-item-form";
+import { NotFoundState } from "@/components/dashboard/not-found-state";
 import { useExtraItem } from "@/hooks/use-extra-item";
 import { ExtraItemInput, updateExtraItem } from "@/lib/api/extra-item";
 
 export default function EditExtraItemPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { item, isLoading, loadError } = useExtraItem(params.id);
+  const { item, isLoading, loadError, isNotFound } = useExtraItem(params.id);
   const detailHref = `/dashboard/itens-extras/${params.id}`;
 
   async function handleSubmit(input: ExtraItemInput) {
@@ -31,6 +32,8 @@ export default function EditExtraItemPage() {
       </div>
     );
   }
+
+  if (isNotFound) return <NotFoundState resource="itens-extras" />;
 
   if (loadError || !item) {
     return (

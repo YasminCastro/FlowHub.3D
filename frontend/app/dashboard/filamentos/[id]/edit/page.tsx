@@ -6,12 +6,13 @@ import { ChevronRight } from "lucide-react";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { FilamentForm } from "@/components/filaments/filament-form";
+import { NotFoundState } from "@/components/dashboard/not-found-state";
 import { useFilament } from "@/hooks/use-filament";
 import { FilamentInput, updateFilament } from "@/lib/api/filament";
 
 export default function EditFilamentPage() {
   const params = useParams<{ id: string }>();
-  const { filament, isLoading, loadError } = useFilament(params.id);
+  const { filament, isLoading, loadError, isNotFound } = useFilament(params.id);
 
   async function handleSubmit(input: FilamentInput) {
     // Observações só entram na criação; na edição ficam no detalhe.
@@ -29,6 +30,8 @@ export default function EditFilamentPage() {
       </div>
     );
   }
+
+  if (isNotFound) return <NotFoundState resource="filamentos" />;
 
   if (loadError || !filament) {
     return (

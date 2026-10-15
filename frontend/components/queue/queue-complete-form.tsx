@@ -37,6 +37,7 @@ import {
   usageDraftFrom,
 } from "@/components/prints/filament-usage-fields";
 import { PendingPhoto, pickPhotos } from "@/components/prints/pending-photos";
+import { NotFoundState } from "@/components/dashboard/not-found-state";
 import {
   DurationDraft,
   DurationInput,
@@ -60,6 +61,7 @@ import {
 } from "@/contexts/page-header-action-context";
 import { useCostContext } from "@/hooks/use-cost-context";
 import { ApiError } from "@/lib/api/auth";
+import { isNotFoundError } from "@/lib/api/client";
 import { Category, listCategories } from "@/lib/api/category";
 import {
   FAILURE_REASONS,
@@ -101,6 +103,7 @@ export function QueueCompleteForm({ entryId }: { entryId: string }) {
   const router = useRouter();
   const [entry, setEntry] = useState<QueueEntry | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isNotFound, setIsNotFound] = useState(false);
   const [items, setItems] = useState<PrintItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [filaments, setFilaments] = useState<PrintFilament[]>([]);
@@ -157,6 +160,7 @@ export function QueueCompleteForm({ entryId }: { entryId: string }) {
       })
       .catch((err) => {
         if (ignore) return;
+        setIsNotFound(isNotFoundError(err));
         setLoadError(
           err instanceof ApiError
             ? err.message
@@ -320,45 +324,51 @@ export function QueueCompleteForm({ entryId }: { entryId: string }) {
   }
 
   usePageHeaderBreadcrumb(
-    <>
-      <Link
-        href="/dashboard/fila"
-        className="text-muted-foreground hover:text-foreground"
-      >
-        Fila de impressão
-      </Link>
-      <ChevronRight
-        className="size-3.5 text-muted-foreground"
-        aria-hidden="true"
-      />
-      <span className="truncate font-medium">
-        Concluir{entry ? ` · ${entry.name} × ${entry.units}` : ""}
-      </span>
-    </>,
+    isNotFound ? null : (
+      <>
+        <Link
+          href="/dashboard/fila"
+          className="text-muted-foreground hover:text-foreground"
+        >
+          Fila de impressão
+        </Link>
+        <ChevronRight
+          className="size-3.5 text-muted-foreground"
+          aria-hidden="true"
+        />
+        <span className="truncate font-medium">
+          Concluir{entry ? ` · ${entry.name} × ${entry.units}` : ""}
+        </span>
+      </>
+    ),
   );
 
   usePageHeaderAction(
-    <>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        onClick={() => router.push("/dashboard/fila")}
-      >
-        Cancelar
-      </Button>
-      <Button
-        type="button"
-        size="sm"
-        disabled={isSaving || !entry}
-        aria-busy={isSaving}
-        onClick={save}
-      >
-        <Check />
-        {isSaving ? "Salvando..." : "Salvar registro"}
-      </Button>
-    </>,
+    isNotFound ? null : (
+      <>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => router.push("/dashboard/fila")}
+        >
+          Cancelar
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          disabled={isSaving || !entry}
+          aria-busy={isSaving}
+          onClick={save}
+        >
+          <Check />
+          {isSaving ? "Salvando..." : "Salvar registro"}
+        </Button>
+      </>
+    ),
   );
+
+  if (isNotFound) return <NotFoundState resource="fila" />;
 
   if (loadError) {
     return (

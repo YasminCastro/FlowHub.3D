@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ExtraItemDeleteDialog } from "@/components/extra-items/extra-item-delete-dialog";
 import { ExtraItemLotDialog } from "@/components/extra-items/extra-item-lot-dialog";
 import { ExtraItemLotDeleteDialog } from "@/components/extra-items/extra-item-lot-delete-dialog";
+import { NotFoundState } from "@/components/dashboard/not-found-state";
 import {
   usePageHeaderAction,
   usePageHeaderBreadcrumb,
@@ -71,7 +72,7 @@ function SummaryRow({
 export default function ExtraItemDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { item, setItem, isLoading, loadError } = useExtraItem(params.id);
+  const { item, setItem, isLoading, loadError, isNotFound } = useExtraItem(params.id);
   const [siblings, setSiblings] = useState<ExtraItem[]>([]);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isLotDialogOpen, setIsLotDialogOpen] = useState(false);
@@ -169,6 +170,8 @@ export default function ExtraItemDetailPage() {
       </div>
     );
   }
+
+  if (isNotFound) return <NotFoundState resource="itens-extras" />;
 
   if (loadError || !item) {
     return (

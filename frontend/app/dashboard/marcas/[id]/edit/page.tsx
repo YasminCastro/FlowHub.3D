@@ -6,13 +6,14 @@ import { ChevronRight } from "lucide-react";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { BrandForm } from "@/components/brands/brand-form";
+import { NotFoundState } from "@/components/dashboard/not-found-state";
 import { useBrand } from "@/hooks/use-brand";
 import { BrandInput, updateBrand } from "@/lib/api/brand";
 
 export default function EditBrandPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { brand, isLoading, loadError } = useBrand(params.id);
+  const { brand, isLoading, loadError, isNotFound } = useBrand(params.id);
 
   async function handleSubmit(input: BrandInput) {
     if (!brand) return;
@@ -30,6 +31,8 @@ export default function EditBrandPage() {
       </div>
     );
   }
+
+  if (isNotFound) return <NotFoundState resource="marcas" />;
 
   if (loadError || !brand) {
     return (

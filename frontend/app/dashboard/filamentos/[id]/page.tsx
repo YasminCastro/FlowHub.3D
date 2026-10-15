@@ -21,6 +21,7 @@ import { FilamentRatingInput } from "@/components/filaments/filament-rating";
 import { FilamentRebuyDialog } from "@/components/filaments/filament-rebuy-dialog";
 import { FilamentSwatch } from "@/components/filaments/filament-swatch";
 import { SpoolLevelPicker } from "@/components/filaments/spool-level";
+import { NotFoundState } from "@/components/dashboard/not-found-state";
 import {
   usePageHeaderAction,
   usePageHeaderBreadcrumb,
@@ -64,7 +65,7 @@ export default function FilamentDetailPage() {
   const router = useRouter();
   // ?recomprar=1: veio do botão Recomprar do card, abre direto a compra.
   const recomprar = useSearchParams().get("recomprar");
-  const { filament, setFilament, isLoading, loadError } = useFilament(
+  const { filament, setFilament, isLoading, loadError, isNotFound } = useFilament(
     params.id,
   );
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -165,6 +166,8 @@ export default function FilamentDetailPage() {
       </div>
     );
   }
+
+  if (isNotFound) return <NotFoundState resource="filamentos" />;
 
   if (loadError || !filament) {
     return (

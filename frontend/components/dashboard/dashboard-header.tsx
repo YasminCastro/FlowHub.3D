@@ -59,9 +59,26 @@ export function DashboardHeader() {
     isInSection(pathname, tab.url),
   );
 
+  // Nenhuma seção conhecida: é a URL inexistente que caiu no 404 do dashboard.
+  const isUnknownPath =
+    pathname !== "/dashboard" &&
+    !isPerfil &&
+    !isConfigSection &&
+    !isEquipamentSection &&
+    !isJournalSection &&
+    !isPrintSection &&
+    !isQueueSection &&
+    !isCatalogSection &&
+    !isCalibrationSection;
+
   return (
     <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-2 border-b bg-background px-3">
       <SidebarTrigger />
+      {isUnknownPath && (
+        <span className="text-sm text-muted-foreground">
+          Página não encontrada
+        </span>
+      )}
       {isPerfil && (
         <>
           <div className="flex items-center gap-1.5 text-sm">
