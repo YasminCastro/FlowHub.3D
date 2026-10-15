@@ -20,6 +20,7 @@ import { PrintModule } from './print/print.module.js';
 import { PrintQueueModule } from './print-queue/print-queue.module.js';
 import { CatalogModule } from './catalog/catalog.module.js';
 import { CalibrationModule } from './calibration/calibration.module.js';
+import { CalibrationGuideModule } from './calibration-guide/calibration-guide.module.js';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { CalibrationModule } from './calibration/calibration.module.js';
     PrintQueueModule,
     CatalogModule,
     CalibrationModule,
+    CalibrationGuideModule,
   ],
   controllers: [AppController, UserController],
   providers: [

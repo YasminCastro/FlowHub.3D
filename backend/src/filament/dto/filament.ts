@@ -32,6 +32,9 @@ export const FILAMENT_RATING_COMMENT_MAX_LENGTH = 200;
 export const FILAMENT_NOTE_MAX_LENGTH = 2000;
 // Rolos duo e tri color: até 3 cores.
 export const FILAMENT_COLORS_MAX_COUNT = 3;
+// Faixas de temperatura do fabricante, em °C.
+export const FILAMENT_NOZZLE_TEMP_MAX = 500;
+export const FILAMENT_BED_TEMP_MAX = 200;
 
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 const HEX_COLOR_MESSAGE = 'Use uma cor no formato #rrggbb.';
@@ -104,6 +107,31 @@ export class FilamentDto {
   @IsString()
   @MaxLength(FILAMENT_RATING_COMMENT_MAX_LENGTH)
   ratingComment?: string | null;
+
+  // Configurações do fabricante: faixa de temperatura do bico e da mesa.
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(FILAMENT_NOZZLE_TEMP_MAX)
+  nozzleTempMin?: number | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(FILAMENT_NOZZLE_TEMP_MAX)
+  nozzleTempMax?: number | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(FILAMENT_BED_TEMP_MAX)
+  bedTempMin?: number | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(FILAMENT_BED_TEMP_MAX)
+  bedTempMax?: number | null;
 
   // Observação inicial: vira a primeira nota datada do filamento.
   @IsOptional()

@@ -103,6 +103,18 @@ export class FilamentService {
     }
   }
 
+  private ensureValidTempRange(
+    min: number | null | undefined,
+    max: number | null | undefined,
+    label: string,
+  ) {
+    if (min != null && max != null && min > max) {
+      throw new BadRequestException(
+        `A temperatura inicial ${label} não pode ser maior que a final.`,
+      );
+    }
+  }
+
   // "#6E473B" e "#6e473b" são a mesma cor; guarda sempre minúsculo.
   private normalizeColors(colors: string[]) {
     return colors.map((color) => color.toLowerCase());
@@ -147,6 +159,12 @@ export class FilamentService {
       'Informe o nome da cor.',
     );
     this.ensureValidPriceRange(data.minPricePaid, data.maxPricePaid);
+    this.ensureValidTempRange(
+      data.nozzleTempMin,
+      data.nozzleTempMax,
+      'do bico',
+    );
+    this.ensureValidTempRange(data.bedTempMin, data.bedTempMax, 'da mesa');
     await this.ensureOwnedBrand(data.brandId, userId);
     await this.ensureNotDuplicate(userId, {
       brandId: data.brandId,
@@ -214,6 +232,20 @@ export class FilamentService {
       data.maxPricePaid !== undefined
         ? data.maxPricePaid
         : current.maxPricePaid,
+    );
+    this.ensureValidTempRange(
+      data.nozzleTempMin !== undefined
+        ? data.nozzleTempMin
+        : current.nozzleTempMin,
+      data.nozzleTempMax !== undefined
+        ? data.nozzleTempMax
+        : current.nozzleTempMax,
+      'do bico',
+    );
+    this.ensureValidTempRange(
+      data.bedTempMin !== undefined ? data.bedTempMin : current.bedTempMin,
+      data.bedTempMax !== undefined ? data.bedTempMax : current.bedTempMax,
+      'da mesa',
     );
 
     if (data.brandId !== undefined && data.brandId !== current.brandId) {

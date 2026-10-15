@@ -66,6 +66,7 @@ import {
   listCalibrationPrinters,
   listCalibrations,
   parseDecimal,
+  sanitizeNumber,
 } from "@/lib/api/calibration";
 import { cn } from "@/lib/utils";
 
@@ -118,21 +119,6 @@ const bedRule = {
   integer: true,
   required: "Informe a temperatura.",
 };
-
-/**
- * Deixa só o que o campo aceita enquanto digita: inteiros só dígitos;
- * decimais com uma vírgula (o ponto vira vírgula) e no máximo `decimals`
- * casas depois dela.
- */
-function sanitizeNumber(value: string, decimals: number) {
-  if (decimals === 0) return value.replace(/\D/g, "");
-  const [intPart, ...rest] = value
-    .replace(/\./g, ",")
-    .replace(/[^\d,]/g, "")
-    .split(",");
-  if (!rest.length) return intPart;
-  return `${intPart || "0"},${rest.join("").slice(0, decimals)}`;
-}
 
 const calibrationFormSchema = z.object({
   filamentId: z.string().min(1, "Escolha o filamento."),

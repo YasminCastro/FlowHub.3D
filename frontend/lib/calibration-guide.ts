@@ -1,45 +1,63 @@
 import {
   CalibrationFilament,
+  CalibrationPrinter,
   CalibrationValues,
   Slicer,
 } from "@/lib/api/calibration";
 
-// Guia de calibração por fatiador: seis testes na ordem que importa. O texto
+// Guia de calibração por fatiador: cinco testes na ordem que importa. O texto
 // cita os valores do rolo escolhido em vez de marcadores genéricos.
 
 export type GuideContext = {
   filament: CalibrationFilament;
+  printer?: CalibrationPrinter;
   slicer: Slicer;
-  /** Resultados já anotados nos passos anteriores, pela chave do passo. */
-  results: Partial<Record<GuideStepId, string>>;
+  /** Valores já anotados nos passos concluídos: passo → campo → valor. */
+  results: Partial<Record<GuideStepId, Record<string, string>>>;
 };
 
 export type GuideStepId =
-  | "temperature"
-  | "flow"
-  | "pressureAdvance"
-  | "retraction"
-  | "maxFlow"
-  | "tolerance";
+  "temperature" | "flow" | "pressureAdvance" | "retraction" | "maxFlow";
+
+export type GuideField = {
+  key: string;
+  label: string;
+  unit?: string;
+  placeholder: string | ((ctx: GuideContext) => string);
+  /** Casas depois da vírgula; 0 = inteiro. */
+  decimals: number;
+  /** Valor da calibração que este campo preenche, quando há um. */
+  target?: keyof CalibrationValues;
+};
 
 export type GuideStep = {
   id: GuideStepId;
   title: string;
+  /** Nome do teste no fatiador, entre parênteses no título do passo. */
+  testName?: string;
   summary: string;
-  /** Campo onde o valor encontrado entra na calibração, quando há um. */
-  field?: keyof CalibrationValues;
-  valueLabel: string;
-  unit?: string;
-  placeholder: string;
+  /** Valores anotados ao concluir o teste, lado a lado. */
+  fields: GuideField[];
+  /** Resumo dos valores na trilha de testes; sem ele, junta com " · ". */
+  summarize?: (values: Record<string, string>) => string;
   howTo: (ctx: GuideContext) => string[];
-  analyze: string[];
+  analyze: string[] | ((ctx: GuideContext) => string[]);
   applyAt: Record<Slicer, string>;
+  /** Instrução final, no lugar de "Onde aplicar" quando o passo tem. */
+  whatToDo?: Record<Slicer, string>;
+  /** Dica em destaque, depois do bloco de valores. */
+  tip?: Record<Slicer, string>;
+  /** Trecho do vídeo de referência que mostra este passo. */
+  video?: string;
 };
 
-export type MaterialDefaults = { nozzleRange: [number, number]; bedTemp: number };
+export type MaterialDefaults = {
+  nozzleRange: [number, number];
+  bedTemp: number;
+};
 
-// O filamento não guarda a faixa do fabricante; o guia parte da faixa
-// típica do material, pelo nome do tipo ("PLA Silk", "PETG"...).
+// Faixa típica do material, pelo nome do tipo ("PLA Silk", "PETG"...). Só
+// vale quando o filamento não tem a faixa do fabricante cadastrada.
 export function materialDefaults(type: string): MaterialDefaults {
   const t = type.toLowerCase();
   if (t.includes("petg")) return { nozzleRange: [230, 250], bedTemp: 80 };
@@ -50,207 +68,329 @@ export function materialDefaults(type: string): MaterialDefaults {
   return { nozzleRange: [190, 220], bedTemp: 60 };
 }
 
-/** Temperatura do passo 1, ou o meio da faixa típica do material. */
-export function guideNozzleTemp(ctx: GuideContext) {
-  const found = ctx.results.temperature?.trim();
-  if (found) return found;
-  const [min, max] = materialDefaults(ctx.filament.type).nozzleRange;
-  return String(Math.round((min + max) / 2 / 5) * 5);
+export type FilamentTemps = {
+  nozzle: { range: [number, number]; fromManufacturer: boolean };
+  bed: { range: [number, number]; fromManufacturer: boolean };
+};
+
+// Com só um dos limites cadastrado, a faixa vira esse valor.
+function manufacturerRange(
+  min: number | null | undefined,
+  max: number | null | undefined,
+): [number, number] | null {
+  if (min == null && max == null) return null;
+  return [min ?? max!, max ?? min!];
 }
 
-function genericProfile(ctx: GuideContext) {
-  return `${ctx.filament.type} genérico`;
+/**
+ * Faixas de bico e mesa do rolo: as do fabricante, cadastradas no filamento,
+ * e a típica do material só para o que não estiver cadastrado.
+ */
+export function filamentTemps(filament: CalibrationFilament): FilamentTemps {
+  const typical = materialDefaults(filament.type);
+  const nozzle = manufacturerRange(
+    filament.nozzleTempMin,
+    filament.nozzleTempMax,
+  );
+  const bed = manufacturerRange(filament.bedTempMin, filament.bedTempMax);
+  return {
+    nozzle: {
+      range: nozzle ?? typical.nozzleRange,
+      fromManufacturer: !!nozzle,
+    },
+    bed: {
+      range: bed ?? [typical.bedTemp, typical.bedTemp],
+      fromManufacturer: !!bed,
+    },
+  };
+}
+
+export function formatTempRange([min, max]: [number, number]) {
+  return min === max ? `${min} °C` : `${min}–${max} °C`;
+}
+
+/** Meio da faixa, arredondado para múltiplo de 5 (190–220 → 205). */
+export function middleOf([min, max]: [number, number]) {
+  return Math.round((min + max) / 2 / 5) * 5;
+}
+
+/** Temperatura anotada no teste de temperatura, ou o meio da faixa do rolo. */
+export function guideNozzleTemp(ctx: GuideContext) {
+  const found = ctx.results.temperature?.nozzleTemp?.trim();
+  if (found) return found;
+  return String(middleOf(filamentTemps(ctx.filament).nozzle.range));
+}
+
+/** Tipo de filamento como o fatiador escreve: "PLA Matte" → "pla_matte". */
+function slicerFilamentType(ctx: GuideContext) {
+  return ctx.filament.type.trim().toLowerCase().replace(/\s+/g, "_");
 }
 
 export const GUIDE_STEPS: GuideStep[] = [
   {
     id: "temperature",
     title: "Temperatura do bico",
+    testName: "Temperature Tower",
     summary:
-      "Acha a temperatura em que o filamento adere bem entre camadas sem fiapos. Todos os outros testes partem dela.",
-    field: "nozzleTemp",
-    valueLabel: "Bico",
-    unit: "°C",
-    placeholder: "210",
+      "Determina a melhor temperatura para equilibrar acabamento visual e resistência mecânica.",
+    fields: [
+      {
+        key: "bedTempFirstLayer",
+        target: "bedTempFirstLayer",
+        label: "Mesa inicial",
+        unit: "°C",
+        decimals: 0,
+        placeholder: (ctx) =>
+          String(middleOf(filamentTemps(ctx.filament).bed.range)),
+      },
+      {
+        key: "bedTemp",
+        target: "bedTemp",
+        label: "Mesa final",
+        unit: "°C",
+        decimals: 0,
+        placeholder: (ctx) =>
+          String(middleOf(filamentTemps(ctx.filament).bed.range)),
+      },
+      {
+        key: "nozzleTempInitial",
+        target: "nozzleTempInitial",
+        label: "Bico inicial",
+        unit: "°C",
+        decimals: 0,
+        placeholder: (ctx) =>
+          String(middleOf(filamentTemps(ctx.filament).nozzle.range)),
+      },
+      {
+        key: "nozzleTemp",
+        target: "nozzleTemp",
+        label: "Bico final",
+        unit: "°C",
+        decimals: 0,
+        placeholder: (ctx) =>
+          String(middleOf(filamentTemps(ctx.filament).nozzle.range)),
+      },
+    ],
+    summarize: (v) =>
+      `Mesa ${v.bedTempFirstLayer}/${v.bedTemp} · Bico ${v.nozzleTempInitial}/${v.nozzleTemp} °C`,
     howTo: (ctx) => {
-      const [min, max] = materialDefaults(ctx.filament.type).nozzleRange;
+      const { range, fromManufacturer } = filamentTemps(ctx.filament).nozzle;
+      const [min, max] = range;
+      const source = fromManufacturer
+        ? "a recomendação do fabricante"
+        : "a faixa típica do material";
+      const temps = `**Start Temp ${max} °C** e **End Temp ${min} °C**`;
       return ctx.slicer === "ORCA"
         ? [
-            `No Orca, abra o perfil **${genericProfile(ctx)}** e escolha a impressora.`,
-            "Menu superior em **Calibration › Temperature**.",
-            `Defina a torre de **${max} °C** até **${min} °C**, em passos de 5 °C.`,
-            "Fatie e imprima. Cada bloco da torre corresponde a uma temperatura.",
+            `No Orca Slicer, selecione um perfil genérico do mesmo material do filamento a ser calibrado (**${ctx.filament.type}**).`,
+            "Vá no menu superior em **Calibration › Temperature**.",
+            `Selecione o tipo de filamento como **${slicerFilamentType(ctx)}**.`,
+            `Preencha as configurações com ${source}: ${temps}.`,
+            "Fatie e envie para impressão.",
           ]
         : [
-            `No Creality Print, selecione o perfil **${genericProfile(ctx)}**.`,
-            "Menu **Calibração › Temperatura**.",
-            `Use a faixa típica do material: **${max} °C** a **${min} °C**, passo de 5 °C.`,
-            "Imprima a torre e anote em que bloco cada temperatura começa.",
+            `No Creality Print, selecione um perfil genérico do mesmo material do filamento a ser calibrado (**${ctx.filament.type}**).`,
+            "Vá no menu superior em **Calibração › Temperatura**.",
+            `Preencha as configurações com ${source}: ${temps}.`,
+            "Fatie e envie para impressão.",
           ];
     },
     analyze: [
-      "Procure o bloco com ponte limpa, sem fiapos entre as torres e com o texto em relevo legível.",
-      "Tente quebrar a torre com a mão: os blocos frios demais descolam primeiro.",
-      "Entre dois blocos parecidos, fique com o mais frio — menos fiapo nas próximas peças.",
+      "Observe: pontes (bridging), cantos, fiapos (stringing) e paredes externas.",
+      "Escolha a temperatura que entregar a melhor combinação de acabamento.",
+      "Em caso de dúvida entre duas temperaturas, prefira a mais alta — isso garante melhor fusão entre camadas e peças mais resistentes.",
     ],
     applyAt: {
       ORCA: "Filament Settings › Filament › Nozzle temperature",
       CREALITY: "Filamento › Temperatura do bico",
     },
-  },
-  {
-    id: "flow",
-    title: "Fluxo (flow rate)",
-    summary:
-      "Ajusta quanto material sai de fato. É o teste que fecha falhas de parede e paredes infladas.",
-    field: "flow",
-    valueLabel: "Fluxo",
-    placeholder: "0,98",
-    howTo: (ctx) =>
-      ctx.slicer === "ORCA"
-        ? [
-            `No Orca, abra o perfil **${genericProfile(ctx)}** com a temperatura que você fixou no passo 1: **${guideNozzleTemp(ctx)} °C**.`,
-            "Menu superior em **Calibration › Flow rate › Pass 1**.",
-            "Fatie e imprima os quadrados. Depois rode o **Pass 2** a partir do quadrado escolhido.",
-            "Some os dois modificadores: o valor final é **1 + pass 1 + pass 2**.",
-          ]
-        : [
-            `No Creality Print, use o perfil **${genericProfile(ctx)}** a **${guideNozzleTemp(ctx)} °C**.`,
-            "Menu **Calibração › Fluxo › Calibração grossa**.",
-            "Imprima, escolha o melhor bloco e rode a **calibração fina** a partir dele.",
-            "O fatiador já mostra o fluxo final do bloco escolhido.",
-          ],
-    analyze: [
-      "Olhe a superfície de topo com luz de lado, não de frente.",
-      "Vale o quadrado mais liso, sem vãos entre as linhas e sem brilho de material acumulado.",
-      "Na dúvida entre dois, prefira o menor — excesso de fluxo aparece depois como parede inflada.",
-    ],
-    applyAt: {
-      ORCA: "Filament Settings › Flow ratio",
-      CREALITY: "Filamento › Taxa de fluxo",
+    whatToDo: {
+      ORCA: "Vá em Filament Settings › altere a temperatura › salve com um novo nome.",
+      CREALITY:
+        "Vá nas configurações do filamento › altere a temperatura › salve com um novo nome.",
     },
-  },
-  {
-    id: "pressureAdvance",
-    title: "Pressure advance",
-    summary:
-      "Compensa a pressão no bico nas acelerações. Cantos ficam vivos, sem bolha na entrada nem falha na saída.",
-    field: "pressureAdvance",
-    valueLabel: "Pressure advance",
-    placeholder: "0,024",
-    howTo: (ctx) =>
-      ctx.slicer === "ORCA"
-        ? [
-            `Com **${guideNozzleTemp(ctx)} °C** e o fluxo do passo 2 já salvos no perfil, abra **Calibration › Pressure advance**.`,
-            "Escolha o teste **PA Pattern** (mais rápido de ler em Klipper).",
-            `Para ${ctx.filament.type === "PETG" ? "PETG, comece em 0 e vá até 0,1 com passo 0,005" : "PLA, comece em 0 e vá até 0,08 com passo 0,002"}.`,
-            "Imprima e procure a linha com os cantos mais nítidos.",
-          ]
-        : [
-            "Menu **Calibração › Pressure Advance**.",
-            "Use o modo **linhas** com o perfil já ajustado de temperatura e fluxo.",
-            `Faixa sugerida: **0** a **${ctx.filament.type === "PETG" ? "0,1" : "0,08"}**.`,
-            "Imprima e conte a linha em que a espessura fica uniforme.",
-          ],
-    analyze: [
-      "Na linha certa, o trecho rápido e o lento têm a mesma espessura.",
-      "Valor baixo demais: bolha no fim da linha. Alto demais: falha logo no começo.",
-      "Confira com um cubo pequeno — o canto não deve abaular.",
-    ],
-    applyAt: {
-      ORCA: "Filament Settings › Enable pressure advance",
-      CREALITY: "Filamento › Pressure advance",
-    },
-  },
-  {
-    id: "retraction",
-    title: "Retração",
-    summary:
-      "Quanto filamento recuar nas viagens. Resolve fiapos sem entupir o bico com retração demais.",
-    field: "retractionDistance",
-    valueLabel: "Retração",
-    unit: "mm",
-    placeholder: "0,8",
-    howTo: (ctx) =>
-      ctx.slicer === "ORCA"
-        ? [
-            "Menu **Calibration › Retraction test**.",
-            "Em extrusora direta, teste de **0** a **2 mm**, passo de 0,1 mm.",
-            `Mantenha **${guideNozzleTemp(ctx)} °C** — temperatura mais alta pede mais retração.`,
-            "Imprima as duas torres e anote a altura em que os fiapos somem.",
-          ]
-        : [
-            "Menu **Calibração › Retração**.",
-            "Extrusora direta: faixa de **0** a **2 mm**, passo de 0,1 mm.",
-            `Imprima a **${guideNozzleTemp(ctx)} °C**.`,
-            "Conte as camadas até a altura em que o fiapo desaparece.",
-          ],
-    analyze: [
-      "Use o menor valor em que os fiapos somem — retração demais desgasta o filamento.",
-      "Fiapo fino que sai com ar quente é normal; fiapo grosso é retração curta.",
-    ],
-    applyAt: {
-      ORCA: "Filament Settings › Setting overrides › Retraction length",
-      CREALITY: "Filamento › Sobrescrever › Comprimento de retração",
-    },
+    video: "https://youtu.be/gVU5If1VsAM?t=132",
   },
   {
     id: "maxFlow",
-    title: "Vazão máxima",
+    title: "Vazão volumétrica máxima",
+    testName: "Max Volumetric Speed",
     summary:
-      "O limite de mm³/s que o hotend derrete este filamento. Evita subextrusão nas peças rápidas.",
-    field: "maxVolumetricSpeed",
-    valueLabel: "Vazão máxima",
-    unit: "mm³/s",
-    placeholder: "18",
+      "Define a quantidade máxima de plástico que sua impressora consegue derreter e empurrar por segundo sem perder qualidade.",
+    fields: [
+      {
+        key: "maxVolumetricSpeed",
+        target: "maxVolumetricSpeed",
+        label: "Vazão máxima",
+        unit: "mm³/s",
+        placeholder: "18",
+        decimals: 2,
+      },
+    ],
     howTo: (ctx) =>
       ctx.slicer === "ORCA"
         ? [
-            "Menu **Calibration › Max flowrate**.",
-            "Comece em **5 mm³/s** e vá até **25 mm³/s**, passo de 0,5.",
-            "Imprima o vaso em espiral e meça a altura em que a parede começa a falhar.",
+            `Selecione o perfil de filamento com a temperatura já ajustada (bico **${guideNozzleTemp(ctx)} °C**).`,
+            "Acesse **Calibration › Max Flow Rate**.",
+            "Mantenha os valores padrão e imprima o modelo.",
           ]
         : [
-            "Menu **Calibração › Velocidade volumétrica máxima**.",
-            "Faixa de **5** a **25 mm³/s**.",
-            "Meça a altura da primeira falha e converta pela tabela do teste.",
+            `Selecione o perfil de filamento com a temperatura já ajustada (bico **${guideNozzleTemp(ctx)} °C**).`,
+            "Acesse **Calibração › Velocidade volumétrica máxima**.",
+            "Mantenha os valores padrão e imprima o modelo.",
           ],
-    analyze: [
-      "A vazão é a da camada logo abaixo da primeira falha visível.",
-      "Use ~10% abaixo do valor medido como margem de segurança.",
+    analyze: (ctx) => [
+      "Procure a altura onde começam os primeiros defeitos de extrusão ou perda de brilho no plástico.",
+      "Meça com um paquímetro a distância (em mm) da base até a altura do defeito.",
+      ctx.slicer === "ORCA"
+        ? "No Orca Slicer (na aba Preview), altere a visualização superior para Flow."
+        : "No Creality Print (na pré-visualização), altere a visualização para Fluxo.",
+      "Arraste a barra vertical até a altura medida para ver a vazão referente àquele ponto.",
+      "Subtraia de 10% a 20% desse valor para ter uma margem de segurança.",
     ],
     applyAt: {
       ORCA: "Filament Settings › Max volumetric speed",
       CREALITY: "Filamento › Velocidade volumétrica máxima",
     },
+    whatToDo: {
+      ORCA: "Vá em Filament Settings › Max Volumetric Speed › insira o novo valor e salve.",
+      CREALITY:
+        "Vá nas configurações do filamento › Velocidade volumétrica máxima › insira o novo valor e salve.",
+    },
+    tip: {
+      ORCA: "Antes de salvar, feche e abra o Orca Slicer novamente para não salvar com os valores usados no teste.",
+      CREALITY:
+        "Antes de salvar, feche e abra o Creality Print novamente para não salvar com os valores usados no teste.",
+    },
+    video: "https://youtu.be/gVU5If1VsAM?t=254",
   },
   {
-    id: "tolerance",
-    title: "Tolerância dimensional",
+    id: "pressureAdvance",
+    title: "Pressure Advance",
+    testName: "Fator K",
     summary:
-      "Confere se encaixes saem no tamanho. Só importa para peças que montam umas nas outras.",
-    valueLabel: "Compensação",
-    unit: "mm",
-    placeholder: "0,05",
-    howTo: (ctx) =>
-      ctx.slicer === "ORCA"
-        ? [
-            "Menu **Calibration › Tolerance test**.",
-            "Imprima a placa com os furos hexagonais e os pinos.",
-            "Tente encaixar cada pino: anote a menor folga que entra sem forçar.",
-          ]
-        : [
-            "Baixe um teste de tolerância (placa com pinos de folgas diferentes).",
-            "Imprima com o perfil já calibrado.",
-            "Anote a menor folga que encaixa sem forçar.",
-          ],
+      "Evita cantos arredondados, acúmulos de plástico ou falhas ao acelerar e desacelerar a impressora.",
+    fields: [
+      {
+        key: "pressureAdvance",
+        target: "pressureAdvance",
+        label: "PA Value",
+        placeholder: "0,024",
+        decimals: 3,
+      },
+    ],
+    howTo: (ctx) => {
+      const extruder = ctx.printer?.extrusionType
+        ? `(a ${ctx.printer.name} é **${ctx.printer.extrusionType}**)`
+        : "(**Direct Drive** ou **Bowden**)";
+      return [
+        ctx.slicer === "ORCA"
+          ? "Vá em **Calibration › Pressure Advance**."
+          : "Vá em **Calibração › Pressure Advance**.",
+        `Selecione o seu tipo de extrusor ${extruder}.`,
+        "Escolha o teste no formato **PA Pattern**.",
+        "Defina no teste a mesma velocidade e aceleração que você costuma usar para paredes externas (ex: **200 mm/s** e **5000 mm/s²**).",
+        "Imprima o teste.",
+      ];
+    },
     analyze: [
-      "Se nenhum pino entra, compense o furo para fora (valor positivo).",
-      "Meça com paquímetro antes de mexer — às vezes o problema é a primeira camada esmagada.",
+      "Olhe para as quinas das linhas impressas.",
+      "Encontre a linha onde a quina está o mais reta e afiada possível, sem falhas ou excesso de plástico.",
+      "Identifique o número (PA Value) correspondente a essa linha.",
     ],
     applyAt: {
-      ORCA: "Process › Quality › X-Y hole compensation",
-      CREALITY: "Qualidade › Compensação de furos X-Y",
+      ORCA: "Filament Settings › Enable pressure advance",
+      CREALITY: "Filamento › Pressure advance",
     },
+    whatToDo: {
+      ORCA: "Em Filament Settings, ative a opção Pressure Advance › insira o valor e salve.",
+      CREALITY:
+        "Nas configurações do filamento, ative a opção Pressure Advance › insira o valor e salve.",
+    },
+    video: "https://youtu.be/gVU5If1VsAM?t=454",
+  },
+  {
+    id: "flow",
+    title: "Taxa de fluxo",
+    testName: "Flow Ratio",
+    summary:
+      "Garante que a espessura de cada linha seja exata, evitando que a peça fique superdimensionada ou com lacunas.",
+    fields: [
+      {
+        key: "flow",
+        target: "flow",
+        label: "Flow Ratio",
+        placeholder: "0,98",
+        decimals: 3,
+      },
+    ],
+    howTo: (ctx) => [
+      ctx.slicer === "ORCA"
+        ? "Vá em **Calibration › Flow Rate › YOLO (Recommended)**."
+        : "Vá em **Calibração › Fluxo**.",
+      "Imprima as amostras numéricas.",
+    ],
+    analyze: [
+      "Procure o quadrado com a superfície superior mais lisa e uniforme, sem ranhuras (excesso) e sem frestas entre as linhas (falta).",
+      "Some/subtraia o valor escolhido ao seu Flow Ratio atual (ex.: se o atual é 1.0 e a melhor amostra foi -0.02, o novo valor será 0.98).",
+    ],
+    applyAt: {
+      ORCA: "Filament Settings › Flow ratio",
+      CREALITY: "Filamento › Taxa de fluxo",
+    },
+    whatToDo: {
+      ORCA: "Atualize o campo Flow Ratio nas configurações do filamento e salve.",
+      CREALITY:
+        "Atualize o campo de taxa de fluxo nas configurações do filamento e salve.",
+    },
+    video: "https://youtu.be/gVU5If1VsAM?t=785",
+  },
+  {
+    id: "retraction",
+    title: "Distância de retração",
+    testName: "Retraction Distance",
+    summary:
+      'Evita a "teia de aranha" (stringing) e pequenos relevos na superfície.',
+    fields: [
+      {
+        key: "retractionDistance",
+        target: "retractionDistance",
+        label: "Retraction Length",
+        unit: "mm",
+        placeholder: "0,8",
+        decimals: 2,
+      },
+    ],
+    howTo: (ctx) => {
+      const type = ctx.printer?.extrusionType?.toLowerCase();
+      const name = ctx.printer?.name;
+      const extruder =
+        type === "bowden"
+          ? `A ${name} é **Bowden**: defina o limite final para **6 mm**.`
+          : type === "direct drive"
+            ? `A ${name} é **Direct Drive**: mantenha os padrões.`
+            : "Para impressoras **Direct Drive**, mantenha os padrões. Para **Bowden**, defina o limite final para **6 mm**.";
+      return [
+        ctx.slicer === "ORCA"
+          ? "Vá em **Calibration › Retraction**."
+          : "Vá em **Calibração › Retração**.",
+        extruder,
+        "Imprima o teste.",
+      ];
+    },
+    analyze: [
+      "O teste imprime anéis empilhados. Identifique a altura do primeiro anel onde o stringing desaparece completamente.",
+      "Verifique no fatiador qual comprimento de retração corresponde àquela altura.",
+    ],
+    applyAt: {
+      ORCA: "Filament Settings › Setting overrides › Retraction length",
+      CREALITY: "Filamento › Sobrescrever › Comprimento de retração",
+    },
+    whatToDo: {
+      ORCA: "Em Filament Settings › aba Setting Override › ative e ajuste o Retraction Length.",
+      CREALITY:
+        "Nas configurações do filamento › aba de sobrescrever configurações › ative e ajuste o comprimento de retração.",
+    },
+    video: "https://youtu.be/gVU5If1VsAM?t=912",
   },
 ];

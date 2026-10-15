@@ -75,6 +75,11 @@ export type Filament = {
   finishedAt: string | null;
   rating: number | null;
   ratingComment: string | null;
+  // Configurações do fabricante (°C): faixa do bico e da mesa.
+  nozzleTempMin: number | null;
+  nozzleTempMax: number | null;
+  bedTempMin: number | null;
+  bedTempMax: number | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -96,6 +101,10 @@ export type FilamentInput = {
   isOutlet?: boolean;
   rating?: number | null;
   ratingComment?: string | null;
+  nozzleTempMin?: number | null;
+  nozzleTempMax?: number | null;
+  bedTempMin?: number | null;
+  bedTempMax?: number | null;
   // Só na criação: vira a primeira observação datada do filamento.
   notes?: string;
 };

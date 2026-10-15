@@ -38,6 +38,7 @@ model User {
   printQueueEntries PrintQueueEntry[]
   catalogItems CatalogItem[]
   calibrations Calibration[]
+  calibrationGuides CalibrationGuideProgress[]
 }
 
 
@@ -79,6 +80,7 @@ model Printer {
   printRecords PrintRecord[]
   printQueueEntries PrintQueueEntry[]
   calibrations Calibration[]
+  calibrationGuides CalibrationGuideProgress[]
 
   @@unique([userId, name])
 }
@@ -195,6 +197,11 @@ model Filament {
   finishedAt        DateTime?
   rating            Int?
   ratingComment     String?
+  // Configurações do fabricante (°C): faixa recomendada do bico e da mesa.
+  nozzleTempMin     Int?
+  nozzleTempMax     Int?
+  bedTempMin        Int?
+  bedTempMax        Int?
   // Restrict: uma marca com filamentos não pode ser excluída, só arquivada.
   brandId           String
   brand             Brand                @relation(fields: [brandId], references: [id], onDelete: Restrict)
@@ -208,6 +215,7 @@ model Filament {
   printUsages PrintRecordFilament[]
   queueUsages PrintQueueFilament[]
   calibrations Calibration[]
+  calibrationGuides CalibrationGuideProgress[]
 
   @@unique([userId, brandId, type, colorName])
   @@index([brandId])
@@ -628,4 +636,30 @@ model CalibrationVersion {
   createdAt          DateTime    @default(now())
 
   @@index([calibrationId, calibratedAt])
+}
+
+// Progresso do guia "Por fatiador" para um filamento, numa impressora, num
+// fatiador: o que já foi anotado em cada teste e qual está aberto. Uma linha
+// por combinação; "Recomeçar" apaga a linha.
+model CalibrationGuideProgress {
+  id         String            @id @default(uuid())
+  slicer     CalibrationSlicer
+  // { [passo]: { values: { [campo]: número }, done: boolean } }. Os passos e
+  // campos válidos ficam no serviço (GUIDE_STEP_FIELDS).
+  results    Json              @default("{}")
+  // Passo aberto na tela ("temperature", "maxFlow"...).
+  activeStep String            @default("temperature")
+  // Cascade: sem o filamento ou a impressora o progresso não significa nada.
+  filamentId String
+  filament   Filament          @relation(fields: [filamentId], references: [id], onDelete: Cascade)
+  printerId  String
+  printer    Printer           @relation(fields: [printerId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  @@unique([userId, filamentId, printerId, slicer])
+  @@index([filamentId])
+  @@index([printerId])
 }

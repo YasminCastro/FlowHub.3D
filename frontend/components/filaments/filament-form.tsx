@@ -74,6 +74,19 @@ const optionalNumber = z
     "Informe um número válido.",
   );
 
+const optionalTemp = z
+  .string()
+  .trim()
+  .refine(
+    (value) =>
+      value === "" || (Number.isInteger(Number(value)) && Number(value) >= 0),
+    "Informe uma temperatura válida.",
+  );
+
+function isValidTempRange(min: string, max: string) {
+  return min === "" || max === "" || Number(min) <= Number(max);
+}
+
 const filamentFormSchema = z
   .object({
     brandId: z.string().min(1, "Escolha a marca."),
@@ -99,6 +112,10 @@ const filamentFormSchema = z
     purchaseCount: z.number().int().min(1),
     rating: z.number().int().min(1).max(5).nullable(),
     ratingComment: z.string().trim(),
+    nozzleTempMin: optionalTemp,
+    nozzleTempMax: optionalTemp,
+    bedTempMin: optionalTemp,
+    bedTempMax: optionalTemp,
     notes: z.string(),
   })
   .refine(
@@ -109,7 +126,18 @@ const filamentFormSchema = z
       message: "O máximo precisa ser maior ou igual ao mínimo.",
       path: ["maxPricePaid"],
     },
-  );
+  )
+  .refine(
+    (values) => isValidTempRange(values.nozzleTempMin, values.nozzleTempMax),
+    {
+      message: "A final precisa ser maior ou igual à inicial.",
+      path: ["nozzleTempMax"],
+    },
+  )
+  .refine((values) => isValidTempRange(values.bedTempMin, values.bedTempMax), {
+    message: "A final precisa ser maior ou igual à inicial.",
+    path: ["bedTempMax"],
+  });
 
 type FilamentFormValues = z.infer<typeof filamentFormSchema>;
 
@@ -145,6 +173,10 @@ function toDefaultValues(
     purchaseCount: filament?.purchaseCount ?? 1,
     rating: filament?.rating ?? null,
     ratingComment: filament?.ratingComment ?? "",
+    nozzleTempMin: toText(filament?.nozzleTempMin),
+    nozzleTempMax: toText(filament?.nozzleTempMax),
+    bedTempMin: toText(filament?.bedTempMin),
+    bedTempMax: toText(filament?.bedTempMax),
     notes: "",
   };
 }
@@ -327,6 +359,10 @@ export function FilamentForm({
       isOutlet: values.isOutlet,
       rating: values.rating,
       ratingComment: values.rating ? values.ratingComment || null : null,
+      nozzleTempMin: toNumber(values.nozzleTempMin),
+      nozzleTempMax: toNumber(values.nozzleTempMax),
+      bedTempMin: toNumber(values.bedTempMin),
+      bedTempMax: toNumber(values.bedTempMax),
       notes: !isEditing && values.notes.trim() ? values.notes : undefined,
     };
 
@@ -739,6 +775,105 @@ export function FilamentForm({
               )}
             />
           </div>
+
+          <Separator />
+
+          <section className="flex flex-col gap-3">
+            <div className="flex items-baseline gap-2">
+              <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                Configurações do fabricante
+              </span>
+              <span className="text-xs text-muted-foreground/70">
+                opcional — faixa de temperatura indicada na caixa do rolo
+              </span>
+            </div>
+            <div className="flex flex-wrap items-start gap-4">
+              <FormField
+                control={form.control}
+                name="nozzleTempMin"
+                render={({ field }) => (
+                  <FormItem className="w-32">
+                    <FormLabel>Bico inicial</FormLabel>
+                    <FormControl>
+                      <SuffixInput
+                        suffix="°C"
+                        type="number"
+                        step="1"
+                        min="0"
+                        placeholder="200"
+                        className="tabular-nums"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="nozzleTempMax"
+                render={({ field }) => (
+                  <FormItem className="w-32">
+                    <FormLabel>Bico final</FormLabel>
+                    <FormControl>
+                      <SuffixInput
+                        suffix="°C"
+                        type="number"
+                        step="1"
+                        min="0"
+                        placeholder="230"
+                        className="tabular-nums"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="bedTempMin"
+                render={({ field }) => (
+                  <FormItem className="w-32">
+                    <FormLabel>Mesa inicial</FormLabel>
+                    <FormControl>
+                      <SuffixInput
+                        suffix="°C"
+                        type="number"
+                        step="1"
+                        min="0"
+                        placeholder="50"
+                        className="tabular-nums"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="bedTempMax"
+                render={({ field }) => (
+                  <FormItem className="w-32">
+                    <FormLabel>Mesa final</FormLabel>
+                    <FormControl>
+                      <SuffixInput
+                        suffix="°C"
+                        type="number"
+                        step="1"
+                        min="0"
+                        placeholder="70"
+                        className="tabular-nums"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+          </section>
 
           <Separator />
 

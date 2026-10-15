@@ -55,6 +55,13 @@ function plural(count: number, singular: string, pluralForm: string) {
   return `${count} ${count === 1 ? singular : pluralForm}`;
 }
 
+// "200 – 230 °C"; com só um lado informado, mostra só ele.
+function formatTempRange(min: number | null, max: number | null) {
+  if (min == null && max == null) return "—";
+  if (min == null || max == null || min === max) return `${min ?? max} °C`;
+  return `${min} – ${max} °C`;
+}
+
 // Mesma ordem padrão da lista (por nome, acabados no fim), para o
 // anterior/próximo andar pelos filamentos na ordem em que você os vê.
 function navigationOrder(filaments: Filament[]) {
@@ -281,6 +288,24 @@ export default function FilamentDetailPage() {
     },
   ];
 
+  const hasManufacturerTemps = [
+    filament.nozzleTempMin,
+    filament.nozzleTempMax,
+    filament.bedTempMin,
+    filament.bedTempMax,
+  ].some((value) => value != null);
+
+  const manufacturerRows = [
+    {
+      label: "Temperatura do bico",
+      value: formatTempRange(filament.nozzleTempMin, filament.nozzleTempMax),
+    },
+    {
+      label: "Temperatura da mesa",
+      value: formatTempRange(filament.bedTempMin, filament.bedTempMax),
+    },
+  ];
+
   return (
     <div className="flex flex-col gap-6 p-8">
       <div className="flex flex-wrap items-center gap-5">
@@ -361,6 +386,44 @@ export default function FilamentDetailPage() {
                 </div>
               ))}
             </div>
+          </section>
+
+          <Separator />
+
+          <section className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-baseline gap-3">
+              <SectionLabel>Configurações do fabricante</SectionLabel>
+              <span className="text-xs text-muted-foreground/70">
+                inicial – final
+              </span>
+            </div>
+            {hasManufacturerTemps ? (
+              <div className="flex flex-col">
+                {manufacturerRows.map((row) => (
+                  <div
+                    key={row.label}
+                    className="grid grid-cols-[1fr_auto] items-center gap-4 border-b border-border/50 py-2.5"
+                  >
+                    <span className="text-[13.5px] text-foreground/75">
+                      {row.label}
+                    </span>
+                    <span className="text-right font-heading text-[15px] font-medium tabular-nums whitespace-nowrap">
+                      {row.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[12.5px] text-muted-foreground">
+                Nenhuma temperatura informada.{" "}
+                <Link
+                  href={`/dashboard/filamentos/${filament.id}/edit`}
+                  className="text-brand-300 hover:underline"
+                >
+                  Adicionar
+                </Link>
+              </p>
+            )}
           </section>
 
           <Separator />

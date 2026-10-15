@@ -34,7 +34,6 @@ import {
   formatPressureAdvance,
   formatRetraction,
   formatTemp,
-  getCalibrationAgeDays,
   getUncalibratedFilaments,
   listCalibrationFilaments,
   listCalibrations,
@@ -162,7 +161,6 @@ function UncalibratedNotice({
   if (filaments.length === 0) return null;
 
   const count = filaments.length;
-  const highlight = filaments[0];
 
   return (
     <div className="flex flex-col gap-3 rounded-md px-3.5 py-3 shadow-[inset_0_0_0_1px_var(--border)]">
@@ -260,10 +258,6 @@ export default function CalibrationsPage() {
     calibrations.some((c) => c.slicer === s),
   );
   const uncalibrated = getUncalibratedFilaments(calibrations, filaments);
-  const oldest = calibrations.reduce<Calibration | null>(
-    (acc, c) => (!acc || c.calibratedAt < acc.calibratedAt ? c : acc),
-    null,
-  );
 
   const query = search.trim().toLowerCase();
   const visible = calibrations
@@ -407,16 +401,6 @@ export default function CalibrationsPage() {
             value={uncalibrated.length}
             accent={uncalibrated.length > 0}
           />
-          {oldest && (
-            <>
-              <CalVRule />
-              <Stat
-                label="Mais antiga"
-                value={getCalibrationAgeDays(oldest.calibratedAt)}
-                detail={`dias · ${oldest.filament.colorName} ${oldest.filament.type}`}
-              />
-            </>
-          )}
           <CalVRule />
           <Stat
             label="Fatiadores"

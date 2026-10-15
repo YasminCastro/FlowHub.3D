@@ -197,3 +197,36 @@
     transparent
   );
 }
+
+/* Nocturne scrollbar: thin hairline thumb in the same tone as the borders,
+   brighter while the pointer is over the area, brand accent while dragging.
+   The track stays transparent so the panel background shows through.
+   Firefox/Chrome use the standard properties; Safari uses ::-webkit-*. */
+@utility scrollbar-nocturne {
+  scrollbar-width: thin;
+  scrollbar-color: var(--neutral-800) transparent;
+  scrollbar-gutter: stable;
+
+  &:hover {
+    scrollbar-color: var(--neutral-700) transparent;
+  }
+
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: var(--neutral-800) padding-box;
+  }
+  &:hover::-webkit-scrollbar-thumb {
+    background-color: var(--neutral-700);
+  }
+  &::-webkit-scrollbar-thumb:active {
+    background-color: var(--brand-700);
+  }
+}

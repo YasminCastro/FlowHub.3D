@@ -32,11 +32,19 @@ export type CalibrationFilament = {
   brandName: string;
   colors: string[];
   spoolLevel: SpoolLevel;
+  /** Faixas do fabricante (°C), do cadastro do filamento. Só vêm da lista
+   * de filamentos; a resposta das calibrações não traz. */
+  nozzleTempMin?: number | null;
+  nozzleTempMax?: number | null;
+  bedTempMin?: number | null;
+  bedTempMax?: number | null;
 };
 
 export type CalibrationPrinter = {
   id: string;
   name: string;
+  /** "Direct drive" ou "Bowden"; só vem da lista de impressoras. */
+  extrusionType?: string | null;
 };
 
 /** Os valores medidos — o que a lista mostra e o que se copia. */
@@ -141,12 +149,20 @@ export async function listCalibrationFilaments(): Promise<
     brandName: f.brand.name,
     colors: f.colors,
     spoolLevel: f.spoolLevel,
+    nozzleTempMin: f.nozzleTempMin,
+    nozzleTempMax: f.nozzleTempMax,
+    bedTempMin: f.bedTempMin,
+    bedTempMax: f.bedTempMax,
   }));
 }
 
 export async function listCalibrationPrinters(): Promise<CalibrationPrinter[]> {
   const printers = await listPrinters();
-  return printers.map((p) => ({ id: p.id, name: p.name }));
+  return printers.map((p) => ({
+    id: p.id,
+    name: p.name,
+    extrusionType: p.extrusionType,
+  }));
 }
 
 // — Helpers —
@@ -184,9 +200,7 @@ export function getUncalibratedFilaments(
   filaments: CalibrationFilament[],
 ) {
   const calibrated = new Set(list.map((c) => c.filament.id));
-  return filaments.filter(
-    (f) => isInStock(f) && !calibrated.has(f.id),
-  );
+  return filaments.filter((f) => isInStock(f) && !calibrated.has(f.id));
 }
 
 export function getCalibrationAgeDays(calibratedAt: string) {
@@ -261,4 +275,102 @@ export function parseDecimal(value: string) {
   if (!normalized) return null;
   const n = Number(normalized);
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Deixa só o que o campo aceita enquanto digita: inteiros só dígitos;
+ * decimais com uma vírgula (o ponto vira vírgula) e no máximo `decimals`
+ * casas depois dela.
+ */
+export function sanitizeNumber(value: string, decimals: number) {
+  if (decimals === 0) return value.replace(/\D/g, "");
+  const [intPart, ...rest] = value
+    .replace(/\./g, ",")
+    .replace(/[^\d,]/g, "")
+    .split(",");
+  if (!rest.length) return intPart;
+  return `${intPart || "0"},${rest.join("").slice(0, decimals)}`;
+}
+
+// — Faixas —
+
+export type ValueRange = {
+  label: string;
+  min: number;
+  max: number;
+  unit?: string;
+};
+
+/** Mesmas faixas da API (CALIBRATION_RANGES no backend). */
+export const CALIBRATION_RANGES: Partial<
+  Record<keyof CalibrationValues, ValueRange>
+> = {
+  bedTempFirstLayer: { label: "Mesa inicial", min: 0, max: 150, unit: " °C" },
+  bedTemp: { label: "Mesa final", min: 0, max: 150, unit: " °C" },
+  nozzleTempInitial: { label: "Bico inicial", min: 150, max: 350, unit: " °C" },
+  nozzleTemp: { label: "Bico final", min: 150, max: 350, unit: " °C" },
+  maxVolumetricSpeed: {
+    label: "Vazão máxima",
+    min: 1,
+    max: 100,
+    unit: " mm³/s",
+  },
+  pressureAdvance: { label: "Pressure Advance", min: 0, max: 2 },
+  flow: { label: "Flow Ratio", min: 0.5, max: 1.5 },
+  retractionDistance: { label: "Retração", min: 0, max: 15, unit: " mm" },
+};
+
+/** Mensagem de faixa ("Entre 150 e 350 °C."), ou null se o valor cabe. */
+export function rangeError(key: keyof CalibrationValues, value: number) {
+  const range = CALIBRATION_RANGES[key];
+  if (!range || (value >= range.min && value <= range.max)) return null;
+  const fmt = (n: number) => n.toLocaleString("pt-BR");
+  return `Entre ${fmt(range.min)} e ${fmt(range.max)}${range.unit ?? ""}.`;
+}
+
+// — Guia por fatiador —
+
+export type GuideProgressKey = {
+  filamentId: string;
+  printerId: string;
+  slicer: Slicer;
+};
+
+/** Valores de um teste do guia como a API guarda: números por campo. */
+export type GuideStepProgress = {
+  values: Record<string, number>;
+  done: boolean;
+};
+
+export type GuideProgress = GuideProgressKey & {
+  id: string;
+  results: Record<string, GuideStepProgress>;
+  activeStep: string;
+  updatedAt: string;
+};
+
+/** Progresso salvo da combinação, ou null se ainda não começou. */
+export async function getGuideProgress(key: GuideProgressKey) {
+  return (await apiFetch(
+    `/calibration-guide?${new URLSearchParams(key)}`,
+  )) as GuideProgress | null;
+}
+
+export async function saveGuideProgress(
+  key: GuideProgressKey,
+  results: Record<string, GuideStepProgress>,
+  activeStep: string,
+) {
+  const data = (await apiFetch("/calibration-guide", {
+    method: "PUT",
+    body: JSON.stringify({ ...key, results, activeStep }),
+  })) as { message: string; data: GuideProgress };
+  return data.data;
+}
+
+/** "Recomeçar": apaga o progresso da combinação. */
+export async function resetGuideProgress(key: GuideProgressKey) {
+  await apiFetch(`/calibration-guide?${new URLSearchParams(key)}`, {
+    method: "DELETE",
+  });
 }
