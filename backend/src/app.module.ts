@@ -18,6 +18,7 @@ import { JournalModule } from './journal/journal.module.js';
 import { CostSettingsModule } from './cost-settings/cost-settings.module.js';
 import { PrintModule } from './print/print.module.js';
 import { PrintQueueModule } from './print-queue/print-queue.module.js';
+import { CatalogModule } from './catalog/catalog.module.js';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { PrintQueueModule } from './print-queue/print-queue.module.js';
     CostSettingsModule,
     PrintModule,
     PrintQueueModule,
+    CatalogModule,
   ],
   controllers: [AppController, UserController],
   providers: [

@@ -10,6 +10,14 @@ export const FILAMENT_TYPES = [
   "TPU",
 ];
 
+/**
+ * Material base do tipo: "PLA Matte" e "PLA Silk" são PLA. Só muda o
+ * acabamento, então para cores e preço contam como o mesmo material.
+ */
+export function getMaterial(type: string) {
+  return type.trim().split(/\s+/)[0] ?? type;
+}
+
 export const SPOOL_WEIGHT_OPTIONS = [250, 500, 750, 1000, 2000];
 
 // Rolos duo e tri color: até 3 cores.

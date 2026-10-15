@@ -13,6 +13,7 @@ import {
   PrinterIcon,
   ShoppingBagIcon,
   SlidersHorizontalIcon,
+  StoreIcon,
   TagIcon,
   ZapIcon,
 } from "lucide-react";
@@ -49,6 +50,11 @@ const navGroups = [
         title: "Fila de Impressão",
         url: "/dashboard/fila",
         icon: ListOrderedIcon,
+      },
+      {
+        title: "Catálogo",
+        url: "/dashboard/catalogo",
+        icon: StoreIcon,
       },
       {
         title: "Diário",
@@ -102,6 +108,13 @@ const navGroups = [
   },
 ];
 
+// Subpáginas (detalhe, novo, editar) mantêm o item marcado. O Início só
+// marca na própria rota, senão ficaria ativo em todo o dashboard.
+function isActiveRoute(pathname: string, url: string) {
+  if (url === "/dashboard") return pathname === url;
+  return pathname === url || pathname.startsWith(`${url}/`);
+}
+
 export function AppSidebar() {
   const pathname = usePathname();
 
@@ -127,7 +140,7 @@ export function AppSidebar() {
                 {group.items.map((item) => (
                   <SidebarMenuItem key={item.url}>
                     <SidebarMenuButton
-                      isActive={pathname === item.url}
+                      isActive={isActiveRoute(pathname, item.url)}
                       tooltip={item.title}
                       className="data-active:bg-brand/12 data-active:text-brand data-active:shadow-[inset_2px_0_0_0_var(--brand)]"
                       render={<Link href={item.url} />}

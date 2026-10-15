@@ -529,16 +529,7 @@ export default function PrintQueuePage() {
         </p>
       )}
 
-      <div className="flex flex-col">
-        {renderQueue()}
-        {!isLoading && pending.length > 0 && costs && (
-          <p className="pt-2.5 text-[11.5px] text-muted-foreground/80">
-            Preço sugerido com a margem padrão (
-            {formatDecimal(costs.settings.defaultMarginPercent)}%). O preço
-            final é definido no Catálogo.
-          </p>
-        )}
-      </div>
+      <div className="flex flex-col">{renderQueue()}</div>
 
       {done.length > 0 && (
         <section className="mt-1.5 flex flex-col gap-1">
@@ -617,7 +608,10 @@ export default function PrintQueuePage() {
                           </>
                         ) : (
                           <>
-                            <ArrowRight className="size-2.75" aria-hidden="true" />
+                            <ArrowRight
+                              className="size-2.75"
+                              aria-hidden="true"
+                            />
                             <span className="truncate">
                               registro em {entry.result.item.name}
                             </span>

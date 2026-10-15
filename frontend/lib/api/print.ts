@@ -8,6 +8,7 @@ import {
   Filament,
   SPOOL_LEVEL_LABELS,
   SpoolLevel,
+  getMaterial,
   isInStock,
   listFilaments,
 } from "./filament";
@@ -534,11 +535,42 @@ export function getDefaultRecord(item: PrintItem) {
 
 export function getPerUnit(record: PrintRecord, ctx: CostContext) {
   const units = Math.max(1, record.units);
+  const cost = computeCost(record, ctx);
   return {
     grams: getRecordGrams(record) / units,
     minutes: record.totalMinutes / units,
-    cost: computeCost(record, ctx).total / units,
+    // Filamento à parte; "outros" é todo o resto (energia, manutenção,
+    // embalagem, fixos e reserva).
+    filamentCost: cost.filament / units,
+    otherCost: (cost.total - cost.filament) / units,
+    cost: cost.total / units,
   };
+}
+
+/**
+ * Custo por unidade se cada filamento do registro fosse trocado pelo rolo mais
+ * caro em estoque do mesmo material, qualquer acabamento (as cores que o
+ * catálogo oferece). Nunca
+ * fica abaixo do preço guardado no registro.
+ */
+export function getWorstCasePerUnit(
+  record: PrintRecord,
+  inStock: PrintFilament[],
+  ctx: CostContext,
+) {
+  const worst: PrintRecord = {
+    ...record,
+    filaments: record.filaments.map((usage) => {
+      const pricePerGram = inStock
+        .filter((f) => getMaterial(f.type) === getMaterial(usage.filament.type))
+        .reduce(
+          (max, f) => Math.max(max, f.pricePerGram),
+          usage.filament.pricePerGram,
+        );
+      return { ...usage, filament: { ...usage.filament, pricePerGram } };
+    }),
+  };
+  return computeCost(worst, ctx).total / Math.max(1, record.units);
 }
 
 export type PrintItemStats = {

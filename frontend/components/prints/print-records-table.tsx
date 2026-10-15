@@ -1,6 +1,9 @@
 "use client";
 
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   CopyPlus,
   GitBranch,
   MoreHorizontal,
@@ -40,6 +43,73 @@ import { cn, formatBRL, formatDatePtBR } from "@/lib/utils";
 
 const COLUMNS =
   "grid-cols-[22px_88px_minmax(150px,1.25fr)_100px_56px_66px_70px_minmax(150px,1.5fr)_84px_28px]";
+
+export type RecordSort = { key: "date" | "cost"; dir: "asc" | "desc" };
+
+export const DEFAULT_RECORD_SORT: RecordSort = { key: "date", dir: "desc" };
+
+/** Ordena antes do "mostrar mais", para a ordem valer na lista inteira. */
+export function sortRecords(
+  records: PrintRecord[],
+  sort: RecordSort,
+  costs: CostContext,
+) {
+  const value = (r: PrintRecord) =>
+    sort.key === "date"
+      ? new Date(r.printedAt).getTime()
+      : computeCost(r, costs).total;
+  const sign = sort.dir === "asc" ? 1 : -1;
+  return [...records].sort((a, b) => (value(a) - value(b)) * sign);
+}
+
+/** Clicar de novo inverte; outra coluna começa do maior/mais recente. */
+export function nextRecordSort(
+  current: RecordSort,
+  key: RecordSort["key"],
+): RecordSort {
+  if (current.key !== key) return { key, dir: "desc" };
+  return { key, dir: current.dir === "desc" ? "asc" : "desc" };
+}
+
+function SortHeader({
+  label,
+  sortKey,
+  sort,
+  onSortChange,
+  className,
+}: {
+  label: string;
+  sortKey: RecordSort["key"];
+  sort: RecordSort;
+  onSortChange: (key: RecordSort["key"]) => void;
+  className?: string;
+}) {
+  const active = sort.key === sortKey;
+  const Icon = !active ? ArrowUpDown : sort.dir === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <button
+      type="button"
+      onClick={() => onSortChange(sortKey)}
+      className={cn(
+        "group inline-flex items-center gap-1 hover:text-foreground",
+        className,
+      )}
+    >
+      <SectionLabel className={cn(active && "text-foreground")}>
+        {label}
+      </SectionLabel>
+      <Icon
+        className={cn(
+          "size-3",
+          active
+            ? "text-foreground"
+            : "text-muted-foreground/50 group-hover:text-muted-foreground",
+        )}
+        aria-hidden="true"
+      />
+    </button>
+  );
+}
 
 function whatChanged(record: PrintRecord, isDefault: boolean) {
   if (record.outcome === "FAILURE") return record.failureReason ?? "Falha";
@@ -128,6 +198,8 @@ export function PrintRecordsTable({
   records,
   costs,
   defaultRecordId,
+  sort,
+  onSortChange,
   onMakeDefault,
   onStartFrom,
   onDerive,
@@ -137,6 +209,8 @@ export function PrintRecordsTable({
   records: PrintRecord[];
   costs: CostContext;
   defaultRecordId: string;
+  sort: RecordSort;
+  onSortChange: (key: RecordSort["key"]) => void;
   onMakeDefault: (record: PrintRecord) => void;
   onStartFrom: (record: PrintRecord) => void;
   onDerive: (record: PrintRecord) => void;
@@ -169,14 +243,25 @@ export function PrintRecordsTable({
           )}
         >
           <span />
-          <SectionLabel>Data</SectionLabel>
+          <SortHeader
+            label="Data"
+            sortKey="date"
+            sort={sort}
+            onSortChange={onSortChange}
+          />
           <SectionLabel>Filamento</SectionLabel>
           <SectionLabel>Impressora</SectionLabel>
           <SectionLabel>Qtd.</SectionLabel>
           <SectionLabel>Gramas</SectionLabel>
           <SectionLabel>Tempo</SectionLabel>
           <SectionLabel>O que mudou</SectionLabel>
-          <SectionLabel className="text-right">Custo</SectionLabel>
+          <SortHeader
+            label="Custo"
+            sortKey="cost"
+            sort={sort}
+            onSortChange={onSortChange}
+            className="justify-self-end"
+          />
           <span />
         </div>
 

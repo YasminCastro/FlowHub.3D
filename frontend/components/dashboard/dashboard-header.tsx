@@ -43,6 +43,7 @@ export function DashboardHeader() {
   const isJournalSection = pathname.startsWith("/dashboard/diario");
   const isPrintSection = pathname.startsWith("/dashboard/impressoes");
   const isQueueSection = pathname.startsWith("/dashboard/fila");
+  const isCatalogSection = pathname.startsWith("/dashboard/catalogo");
 
   return (
     <header className="flex h-12 items-center gap-2 border-b px-3">
@@ -162,6 +163,19 @@ export function DashboardHeader() {
             {breadcrumb ?? (
               <span className="font-medium">Fila de impressão</span>
             )}
+          </div>
+          {headerAction && (
+            <div className="ml-auto flex items-center gap-2">
+              {headerAction}
+            </div>
+          )}
+        </>
+      )}
+
+      {isCatalogSection && (
+        <>
+          <div className="flex min-w-0 items-center gap-1.5 text-sm">
+            {breadcrumb ?? <span className="font-medium">Catálogo</span>}
           </div>
           {headerAction && (
             <div className="ml-auto flex items-center gap-2">

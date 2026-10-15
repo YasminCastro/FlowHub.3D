@@ -72,8 +72,14 @@ export function PrintCard({
             {stats.colors.length} {stats.colors.length === 1 ? "cor" : "cores"}
             {types.some((t) => t !== "PLA") && ` · ${types.join(" + ")}`}
           </span>
-          <span className="ml-auto font-heading text-sm font-medium tabular-nums">
-            {formatBRL(perUnit.cost)}
+          <span className="ml-auto flex flex-col items-end">
+            <span className="font-heading text-sm font-medium tabular-nums">
+              {formatBRL(perUnit.cost)}
+            </span>
+            <span className="text-[10.5px] text-muted-foreground tabular-nums">
+              fil. {formatBRL(perUnit.filamentCost)} + outros{" "}
+              {formatBRL(perUnit.otherCost)}
+            </span>
           </span>
         </div>
 

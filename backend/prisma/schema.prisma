@@ -36,6 +36,7 @@ model User {
   costSettings CostSettings?
   printItems PrintItem[]
   printQueueEntries PrintQueueEntry[]
+  catalogItems CatalogItem[]
 }
 
 
@@ -49,6 +50,7 @@ model Category {
   updatedAt DateTime @updatedAt
 
   printItems PrintItem[]
+  catalogItems CatalogItem[]
 
   @@unique([userId, name])
 }
@@ -358,6 +360,7 @@ model PrintItem {
 
   records PrintRecord[]
   queueEntries PrintQueueEntry[]
+  catalogVariants CatalogVariant[]
 
   @@unique([userId, name])
   @@index([categoryId])
@@ -432,6 +435,8 @@ model PrintPhoto {
   record    PrintRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
   createdAt DateTime    @default(now())
 
+  catalogPhotos CatalogPhoto[]
+
   @@index([recordId, createdAt])
 }
 
@@ -492,4 +497,69 @@ model PrintQueueFilament {
 
   @@index([entryId, position])
   @@index([filamentId])
+}
+
+// Catálogo: o que é vendido. Cada item se liga a uma ou mais impressões; o
+// preço calculado sai do registro padrão delas (a conta fica no front, como
+// o custo em Impressões) e pode ser sobrescrito.
+enum CatalogKind {
+  // Uma impressão, um preço.
+  SINGLE
+  // Uma impressão por tamanho, cada um com seu preço.
+  SIZES
+  // Várias impressões vendidas juntas, um preço para o kit.
+  KIT
+}
+
+model CatalogItem {
+  id          String      @id @default(uuid())
+  name        String
+  description String?
+  kind        CatalogKind
+  // Só em KIT; null usa a soma do calculado das peças.
+  kitPrice    Float?
+  // SetNull: excluir a categoria deixa o item "sem categoria".
+  categoryId  String?
+  category    Category?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  variants CatalogVariant[]
+  photos   CatalogPhoto[]
+
+  @@unique([userId, name])
+  @@index([categoryId])
+}
+
+// Um tamanho (SIZES), a peça (SINGLE) ou uma das peças do kit (KIT).
+model CatalogVariant {
+  id            String      @id @default(uuid())
+  position      Int
+  // "P", "M", "G"... Vazio fora de SIZES.
+  label         String      @default("")
+  // null: usa o calculado. Em KIT fica null (o preço é do kit).
+  priceOverride Float?
+  // SetNull: excluir a impressão deixa a linha sem impressão ligada.
+  printItemId   String?
+  printItem     PrintItem?  @relation(fields: [printItemId], references: [id], onDelete: SetNull)
+  catalogItemId String
+  catalogItem   CatalogItem @relation(fields: [catalogItemId], references: [id], onDelete: Cascade)
+
+  @@index([catalogItemId, position])
+  @@index([printItemId])
+}
+
+// Fotos escolhidas entre as dos registros das impressões ligadas. Excluir a
+// foto (ou o registro) tira ela do catálogo.
+model CatalogPhoto {
+  position      Int
+  catalogItemId String
+  catalogItem   CatalogItem @relation(fields: [catalogItemId], references: [id], onDelete: Cascade)
+  photoId       String
+  photo         PrintPhoto  @relation(fields: [photoId], references: [id], onDelete: Cascade)
+
+  @@id([catalogItemId, photoId])
+  @@index([photoId])
 }

@@ -26,7 +26,13 @@ import {
 import { PrintDeleteDialog } from "@/components/prints/print-delete-dialog";
 import { PrintRecordDeleteDialog } from "@/components/prints/print-record-delete-dialog";
 import { PrintRecordSheet } from "@/components/prints/print-record-sheet";
-import { PrintRecordsTable } from "@/components/prints/print-records-table";
+import {
+  DEFAULT_RECORD_SORT,
+  PrintRecordsTable,
+  RecordSort,
+  nextRecordSort,
+  sortRecords,
+} from "@/components/prints/print-records-table";
 import {
   usePageHeaderAction,
   usePageHeaderBreadcrumb,
@@ -40,10 +46,10 @@ import {
   PrintRecord,
   formatDuration,
   formatGrams,
-  formatSettings,
   getDefaultRecord,
   getItemStats,
   getLostCost,
+  getWorstCasePerUnit,
   getPerUnit,
   listPrintFilaments,
   setDefaultPrintRecord,
@@ -107,6 +113,7 @@ export default function PrintItemPage() {
   // Com um id, o painel edita esse registro em vez de criar um novo.
   const [sheetEditId, setSheetEditId] = useState<string | null>(null);
   const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>("all");
+  const [recordSort, setRecordSort] = useState<RecordSort>(DEFAULT_RECORD_SORT);
   const [showAll, setShowAll] = useState(false);
   // Vindo da Nova impressão com ?fotos=erro: salvou, mas as fotos falharam.
   const [actionError, setActionError] = useState<string | null>(() =>
@@ -221,13 +228,18 @@ export default function PrintItemPage() {
 
   const base = getDefaultRecord(item);
   const perUnit = getPerUnit(base, costs);
+  const worstCasePerUnit = getWorstCasePerUnit(base, filaments, costs);
   const stats = getItemStats(item);
   const lostCost = getLostCost(item.records, costs);
   const photos = item.records.flatMap((r) => r.photos.map((p) => p.src));
   const mainPhoto = photos[activePhoto] ?? photos[0];
 
-  const filteredRecords = item.records.filter(
-    (r) => outcomeFilter === "all" || r.outcome === outcomeFilter,
+  const filteredRecords = sortRecords(
+    item.records.filter(
+      (r) => outcomeFilter === "all" || r.outcome === outcomeFilter,
+    ),
+    recordSort,
+    costs,
   );
   const visibleRecords = showAll
     ? filteredRecords
@@ -349,7 +361,11 @@ export default function PrintItemPage() {
             </div>
           </div>
 
-          <section className="flex flex-col gap-3 rounded-md bg-card px-4.5 py-4 shadow-[inset_0_0_0_1px_var(--brand-800)]">
+          <button
+            type="button"
+            onClick={() => openEdit(base.id)}
+            className="flex flex-col gap-3 rounded-md bg-card px-4.5 py-4 text-left shadow-[inset_0_0_0_1px_var(--brand-800)] transition-shadow hover:shadow-[inset_0_0_0_1px_var(--brand)] focus-visible:outline-2 focus-visible:outline-brand"
+          >
             <div className="flex flex-wrap items-center gap-2">
               <Star
                 className="size-3.25 fill-current text-brand"
@@ -372,34 +388,24 @@ export default function PrintItemPage() {
                 value={formatDuration(perUnit.minutes)}
               />
               <StatDivider />
+              <Stat
+                label="Filamento / un."
+                value={formatBRL(perUnit.filamentCost)}
+              />
+              <StatDivider />
+              <Stat
+                label="Outros custos / un."
+                value={formatBRL(perUnit.otherCost)}
+              />
+              <StatDivider />
               <Stat label="Custo / un." value={formatBRL(perUnit.cost)} />
               <StatDivider />
-              <div className="flex min-w-0 flex-col gap-1.75">
-                <SectionLabel>Configuração</SectionLabel>
-                <div className="text-[12.5px] leading-normal text-foreground/72">
-                  {base.settings ? (
-                    <>
-                      {base.printer.name} · {base.settings.slicer} ·{" "}
-                      {formatSettings(base.settings).split(" · ")[0]}
-                      <br />
-                      {formatSettings(base.settings)
-                        .split(" · ")
-                        .slice(1)
-                        .join(" · ")}
-                    </>
-                  ) : (
-                    <>
-                      {base.printer.name}
-                      <br />
-                      <span className="text-muted-foreground">
-                        Sem configuração do fatiador
-                      </span>
-                    </>
-                  )}
-                </div>
-              </div>
+              <Stat
+                label="Pior cenário / un."
+                value={formatBRL(worstCasePerUnit)}
+              />
             </div>
-          </section>
+          </button>
 
           <div className="flex flex-wrap items-stretch gap-6">
             <Stat label="Registros" value={stats.recordCount} size="sm" />
@@ -441,9 +447,6 @@ export default function PrintItemPage() {
               </FilterChip>
             ))}
           </div>
-          <span className="ml-auto text-[11.5px] text-muted-foreground/80">
-            Clique em um registro para ver a configuração completa
-          </span>
         </div>
 
         {actionError && (
@@ -457,6 +460,10 @@ export default function PrintItemPage() {
             costs={costs}
             records={visibleRecords}
             defaultRecordId={item.defaultRecordId}
+            sort={recordSort}
+            onSortChange={(key) =>
+              setRecordSort((current) => nextRecordSort(current, key))
+            }
             onMakeDefault={(record) => makeDefault(record.id)}
             onStartFrom={(record) => openSheet(record.id)}
             onEdit={(record) => openEdit(record.id)}
