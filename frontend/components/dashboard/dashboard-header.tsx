@@ -24,6 +24,11 @@ const EQUIPAMENT_TABS = [
   { title: "Filamentos", url: "/dashboard/filamentos" },
 ];
 
+const CALIBRATION_TABS = [
+  { title: "Calibrações", url: "/dashboard/calibracoes" },
+  { title: "Por fatiador", url: "/dashboard/fatiadores" },
+];
+
 export function DashboardHeader() {
   const pathname = usePathname();
   const router = useRouter();
@@ -44,6 +49,9 @@ export function DashboardHeader() {
   const isPrintSection = pathname.startsWith("/dashboard/impressoes");
   const isQueueSection = pathname.startsWith("/dashboard/fila");
   const isCatalogSection = pathname.startsWith("/dashboard/catalogo");
+  const isCalibrationSection = CALIBRATION_TABS.some((tab) =>
+    pathname.startsWith(tab.url),
+  );
 
   return (
     <header className="flex h-12 items-center gap-2 border-b px-3">
@@ -177,6 +185,39 @@ export function DashboardHeader() {
           <div className="flex min-w-0 items-center gap-1.5 text-sm">
             {breadcrumb ?? <span className="font-medium">Catálogo</span>}
           </div>
+          {headerAction && (
+            <div className="ml-auto flex items-center gap-2">
+              {headerAction}
+            </div>
+          )}
+        </>
+      )}
+
+      {isCalibrationSection && (
+        <>
+          {breadcrumb ? (
+            <div className="flex min-w-0 items-center gap-1.5 text-sm">
+              {breadcrumb}
+            </div>
+          ) : (
+            <nav className="flex h-full items-stretch gap-4">
+              {CALIBRATION_TABS.map((tab) => {
+                const isActive = pathname.startsWith(tab.url);
+                return (
+                  <Link
+                    key={tab.url}
+                    href={tab.url}
+                    className={cn(
+                      "flex items-center border-b-2 border-transparent text-sm text-muted-foreground transition-colors hover:text-foreground",
+                      isActive && "border-brand font-medium text-foreground",
+                    )}
+                  >
+                    {tab.title}
+                  </Link>
+                );
+              })}
+            </nav>
+          )}
           {headerAction && (
             <div className="ml-auto flex items-center gap-2">
               {headerAction}

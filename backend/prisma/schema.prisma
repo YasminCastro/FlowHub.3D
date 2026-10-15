@@ -37,6 +37,7 @@ model User {
   printItems PrintItem[]
   printQueueEntries PrintQueueEntry[]
   catalogItems CatalogItem[]
+  calibrations Calibration[]
 }
 
 
@@ -77,6 +78,7 @@ model Printer {
   maintenances PrinterMaintenance[]
   printRecords PrintRecord[]
   printQueueEntries PrintQueueEntry[]
+  calibrations Calibration[]
 
   @@unique([userId, name])
 }
@@ -205,6 +207,7 @@ model Filament {
   journalEntries JournalEntry[]
   printUsages PrintRecordFilament[]
   queueUsages PrintQueueFilament[]
+  calibrations Calibration[]
 
   @@unique([userId, brandId, type, colorName])
   @@index([brandId])
@@ -562,4 +565,67 @@ model CatalogPhoto {
 
   @@id([catalogItemId, photoId])
   @@index([photoId])
+}
+
+// Calibrações: os valores que funcionaram para um filamento, numa impressora,
+// num fatiador. Uma por combinação; salvar de novo a mesma combinação guarda
+// os valores anteriores em CalibrationVersion.
+enum CalibrationSlicer {
+  ORCA
+  CREALITY
+}
+
+model Calibration {
+  id                 String            @id @default(uuid())
+  slicer             CalibrationSlicer
+  // Multiplicador (1,00 = sem ajuste).
+  flow               Float
+  // Bico: camada inicial e demais camadas ("final").
+  nozzleTempInitial  Int
+  nozzleTemp         Int
+  // Mesa: 1ª camada e demais camadas.
+  bedTempFirstLayer  Int
+  bedTemp            Int
+  pressureAdvance    Float
+  // Opcionais.
+  // Vazão máxima que o hotend derrete este filamento, em mm³/s.
+  maxVolumetricSpeed Float?
+  retractionDistance Float?
+  notes              String?
+  calibratedAt       DateTime
+  // Cascade: sem o filamento ou a impressora a calibração não significa nada.
+  filamentId         String
+  filament           Filament          @relation(fields: [filamentId], references: [id], onDelete: Cascade)
+  printerId          String
+  printer            Printer           @relation(fields: [printerId], references: [id], onDelete: Cascade)
+  userId             String
+  user               User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  versions CalibrationVersion[]
+
+  @@unique([userId, filamentId, printerId, slicer])
+  @@index([filamentId])
+  @@index([printerId])
+}
+
+// Valores que a calibração tinha antes de ser substituída por uma nova.
+model CalibrationVersion {
+  id                 String      @id @default(uuid())
+  flow               Float
+  nozzleTempInitial  Int
+  nozzleTemp         Int
+  bedTempFirstLayer  Int
+  bedTemp            Int
+  pressureAdvance    Float
+  maxVolumetricSpeed Float?
+  retractionDistance Float?
+  notes              String?
+  calibratedAt       DateTime
+  calibrationId      String
+  calibration        Calibration @relation(fields: [calibrationId], references: [id], onDelete: Cascade)
+  createdAt          DateTime    @default(now())
+
+  @@index([calibrationId, calibratedAt])
 }
