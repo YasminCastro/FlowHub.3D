@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import {
   AddPrintRecordDto,
   PRINT_MAX_PHOTOS,
+  UpdatePrintPhotoDto,
   UpdatePrintRecordDto,
   PrintFilamentUsageDto,
   PrintItemDto,
@@ -24,7 +25,13 @@ const recordInclude = {
     include: { filament: { select: { spoolLevel: true } } },
   },
   photos: {
-    select: { id: true, filename: true },
+    select: {
+      id: true,
+      filename: true,
+      focusX: true,
+      focusY: true,
+      contain: true,
+    },
     orderBy: { createdAt: 'asc' },
   },
 } satisfies Prisma.PrintRecordInclude;
@@ -351,6 +358,9 @@ export class PrintService {
       photos: photos.map((photo) => ({
         id: photo.id,
         url: printPhotoUrl(photo.filename),
+        focusX: photo.focusX,
+        focusY: photo.focusY,
+        contain: photo.contain,
       })),
     };
   }
@@ -625,6 +635,33 @@ export class PrintService {
 
     return {
       message: 'Fotos adicionadas com sucesso',
+      data: await this.getItemById(itemId, userId),
+    };
+  }
+
+  async updatePhoto(
+    itemId: string,
+    recordId: string,
+    photoId: string,
+    userId: string,
+    dto: UpdatePrintPhotoDto,
+  ) {
+    const item = await this.findOwnedItem(itemId, userId);
+    const photo = this.findRecord(item, recordId).photos.find(
+      (p) => p.id === photoId,
+    );
+
+    if (!photo) {
+      throw new NotFoundException('Foto não encontrada.');
+    }
+
+    await this.prisma.printPhoto.update({
+      where: { id: photoId },
+      data: { focusX: dto.focusX, focusY: dto.focusY, contain: dto.contain },
+    });
+
+    return {
+      message: 'Foto ajustada com sucesso',
       data: await this.getItemById(itemId, userId),
     };
   }

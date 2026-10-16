@@ -56,6 +56,7 @@ import {
   SuffixInput,
   changedFieldClass,
 } from "@/components/prints/print-bits";
+import { FramedPhoto } from "@/components/prints/framed-photo";
 import {
   DEFAULT_SLICER_SETTINGS,
   FAILURE_REASONS,
@@ -748,11 +749,10 @@ function RecordForm({
           <div className="-mt-2 flex flex-wrap gap-1.5">
             {savedPhotos.map((photo, index) => (
               <div key={photo.id} className="group relative size-12">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={photo.src}
+                <FramedPhoto
+                  photo={photo}
                   alt={`Foto salva ${index + 1}`}
-                  className="size-full rounded-sm object-cover"
+                  className="size-full rounded-sm"
                 />
                 <button
                   type="button"

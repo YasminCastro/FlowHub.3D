@@ -25,6 +25,7 @@ import {
   Stat,
   StatDivider,
 } from "@/components/prints/print-bits";
+import { FramedPhoto, PhotoFramer } from "@/components/prints/framed-photo";
 import { PrintDeleteDialog } from "@/components/prints/print-delete-dialog";
 import { PrintRecordDeleteDialog } from "@/components/prints/print-record-delete-dialog";
 import { PrintRecordSheet } from "@/components/prints/print-record-sheet";
@@ -57,6 +58,7 @@ import {
   getPerUnit,
   listPrintFilaments,
   setDefaultPrintRecord,
+  updatePrintPhoto,
   modelHref,
   shortUrl,
 } from "@/lib/api/print";
@@ -276,7 +278,9 @@ export default function PrintItemPage() {
   const worstCasePerUnit = getWorstCasePerUnit(base, filaments, costs);
   const stats = getItemStats(item);
   const lostCost = getLostCost(item.records, costs);
-  const photos = item.records.flatMap((r) => r.photos.map((p) => p.src));
+  const photos = item.records.flatMap((r) =>
+    r.photos.map((photo) => ({ ...photo, recordId: r.id })),
+  );
   const mainPhoto = photos[activePhoto] ?? photos[0];
 
   const filteredRecords = sortRecords(
@@ -309,11 +313,31 @@ export default function PrintItemPage() {
       <div className="grid grid-cols-1 items-start gap-7 md:grid-cols-[300px_minmax(0,1fr)]">
         <div className="flex flex-col gap-2">
           {mainPhoto ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={mainPhoto}
+            <PhotoFramer
+              key={mainPhoto.id}
+              photo={mainPhoto}
               alt={item.name}
-              className="h-55 w-full rounded-md object-cover"
+              className="h-55 w-full rounded-md"
+              onSave={async (framing) => {
+                setActionError(null);
+                try {
+                  setItem(
+                    await updatePrintPhoto(
+                      item.id,
+                      mainPhoto.recordId,
+                      mainPhoto.id,
+                      framing,
+                    ),
+                  );
+                } catch (err) {
+                  setActionError(
+                    err instanceof ApiError
+                      ? err.message
+                      : "Não foi possível ajustar a foto.",
+                  );
+                  throw err;
+                }
+              }}
             />
           ) : (
             <PhotoPlaceholder className="h-55 flex-col gap-1.5 rounded-md">
@@ -325,9 +349,9 @@ export default function PrintItemPage() {
           )}
           {photos.length > 1 && (
             <div className="grid grid-cols-4 gap-2">
-              {photos.slice(0, 4).map((src, index) => (
+              {photos.slice(0, 4).map((photo, index) => (
                 <button
-                  key={src}
+                  key={photo.id}
                   type="button"
                   aria-label={`Ver foto ${index + 1}`}
                   onClick={() => setActivePhoto(index)}
@@ -337,8 +361,7 @@ export default function PrintItemPage() {
                       "shadow-[inset_0_0_0_1px_var(--brand)]",
                   )}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={src} alt="" className="size-full object-cover" />
+                  <FramedPhoto photo={photo} className="size-full" />
                 </button>
               ))}
             </div>

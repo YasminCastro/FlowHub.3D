@@ -24,6 +24,7 @@ import {
   Stat,
   StatDivider,
 } from "@/components/prints/print-bits";
+import { FramedPhoto } from "@/components/prints/framed-photo";
 import { usePageHeaderAction } from "@/contexts/page-header-action-context";
 import { useCostContext } from "@/hooks/use-cost-context";
 import { ApiError } from "@/lib/api/auth";
@@ -107,8 +108,8 @@ function firstPhoto(item: PrintItem | undefined) {
   if (!item) return null;
   const record = getDefaultRecord(item);
   return (
-    record?.photos[0]?.src ??
-    item.records.find((r) => r.photos.length)?.photos[0]?.src ??
+    record?.photos[0] ??
+    item.records.find((r) => r.photos.length)?.photos[0] ??
     null
   );
 }
@@ -376,11 +377,9 @@ export default function PrintQueuePage() {
                   {position}
                 </span>
                 {photo ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={photo}
-                    alt=""
-                    className="h-9 w-11 rounded-sm object-cover"
+                  <FramedPhoto
+                    photo={photo}
+                    className="h-9 w-11 rounded-sm"
                   />
                 ) : (
                   <PhotoPlaceholder className="h-9 w-11 rounded-sm [&_svg]:size-3.75" />

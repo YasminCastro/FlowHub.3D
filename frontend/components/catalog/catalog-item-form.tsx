@@ -35,6 +35,7 @@ import {
   PhotoPlaceholder,
   SectionLabel,
 } from "@/components/prints/print-bits";
+import { FramedPhoto } from "@/components/prints/framed-photo";
 import { Field, Step } from "@/components/queue/queue-bits";
 import {
   usePageHeaderAction,
@@ -712,14 +713,9 @@ export function CatalogItemForm({
                       selected && "ring-[1.5px] ring-brand ring-inset",
                     )}
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={photo.src}
-                      alt=""
-                      className={cn(
-                        "size-full object-cover",
-                        !selected && "opacity-70",
-                      )}
+                    <FramedPhoto
+                      photo={photo}
+                      className={cn("size-full", !selected && "opacity-70")}
                     />
                     {selected && (
                       <span className="absolute top-1.25 right-1.25 grid size-4 place-items-center rounded-full bg-brand text-background">
@@ -799,11 +795,9 @@ export function CatalogItemForm({
         <SectionLabel>No card</SectionLabel>
         <div className="flex flex-col gap-1.5">
           {previewPhoto ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={previewPhoto.src}
-              alt=""
-              className="h-24 w-full rounded-sm object-cover"
+            <FramedPhoto
+              photo={previewPhoto}
+              className="h-24 w-full rounded-sm"
             />
           ) : (
             <PhotoPlaceholder className="h-24 rounded-sm" />

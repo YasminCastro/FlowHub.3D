@@ -445,6 +445,11 @@ model PrintPhoto {
   recordId  String
   record    PrintRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
   createdAt DateTime    @default(now())
+  // Enquadramento: ponto da foto (0 a 100%) que fica no centro do recorte, ou
+  // a foto inteira, sem recorte.
+  focusX    Float       @default(50)
+  focusY    Float       @default(50)
+  contain   Boolean     @default(false)
 
   catalogPhotos CatalogPhoto[]
 

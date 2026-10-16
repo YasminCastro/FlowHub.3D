@@ -19,6 +19,7 @@ import {
   PRINT_MAX_PHOTOS,
   PRINT_PHOTO_MAX_BYTES,
   PrintItemDto,
+  UpdatePrintPhotoDto,
   UpdatePrintRecordDto,
 } from './dto/print.js';
 
@@ -112,6 +113,23 @@ export class PrintController {
       recordId,
       currentUserId,
       files ?? [],
+    );
+  }
+
+  @Patch(':id/records/:recordId/photos/:photoId')
+  updatePhoto(
+    @CurrentUser('userId') currentUserId: string,
+    @Param('id') itemId: string,
+    @Param('recordId') recordId: string,
+    @Param('photoId') photoId: string,
+    @Body() dto: UpdatePrintPhotoDto,
+  ) {
+    return this.printService.updatePhoto(
+      itemId,
+      recordId,
+      photoId,
+      currentUserId,
+      dto,
     );
   }
 

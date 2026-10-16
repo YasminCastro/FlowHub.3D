@@ -28,6 +28,7 @@ import {
   OutcomeIcon,
   SectionLabel,
 } from "@/components/prints/print-bits";
+import { FramedPhoto } from "@/components/prints/framed-photo";
 import {
   PrintRecord,
   CostContext,
@@ -179,12 +180,10 @@ function RecordDetails({
         {record.photos.length > 0 && (
           <div className="mt-1.5 flex gap-1.5">
             {record.photos.map((photo) => (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              <FramedPhoto
                 key={photo.id}
-                src={photo.src}
-                alt=""
-                className="size-12 rounded-sm object-cover"
+                photo={photo}
+                className="size-12 rounded-sm"
               />
             ))}
           </div>

@@ -47,7 +47,10 @@ export type PrintFilamentUsage = {
   usageId?: string;
 };
 
-export type PrintPhoto = { id: string; src: string };
+// Ponto de foco (0 a 100%) que fica no centro do recorte, ou a foto inteira.
+export type PhotoFraming = { focusX: number; focusY: number; contain: boolean };
+
+export type PrintPhoto = { id: string; src: string } & PhotoFraming;
 
 export type SlicerSettings = {
   slicer: string;
@@ -147,7 +150,7 @@ export type PrintFilamentUsageResponse = {
 
 type PrintRecordResponse = Omit<PrintRecord, "filaments" | "photos"> & {
   filaments: PrintFilamentUsageResponse[];
-  photos: { id: string; url: string }[];
+  photos: ({ id: string; url: string } & PhotoFraming)[];
 };
 
 type PrintItemResponse = Omit<PrintItem, "records" | "defaultRecordId"> & {
@@ -179,9 +182,9 @@ function fromRecordResponse(record: PrintRecordResponse): PrintRecord {
   return {
     ...record,
     filaments: record.filaments.map(fromUsageResponse),
-    photos: record.photos.map((photo) => ({
-      id: photo.id,
-      src: printPhotoSrc(photo.url),
+    photos: record.photos.map(({ url, ...photo }) => ({
+      ...photo,
+      src: printPhotoSrc(url),
     })),
   };
 }
@@ -358,6 +361,19 @@ export async function updatePrintRecord(
     };
   }
   return withPhotos(item, recordId, photos.add);
+}
+
+export async function updatePrintPhoto(
+  itemId: string,
+  recordId: string,
+  photoId: string,
+  framing: PhotoFraming,
+) {
+  const data = (await apiFetch(
+    `/print/${itemId}/records/${recordId}/photos/${photoId}`,
+    { method: "PATCH", body: JSON.stringify(framing) },
+  )) as ItemResponse;
+  return fromItemResponse(data.data);
 }
 
 export async function setDefaultPrintRecord(itemId: string, recordId: string) {

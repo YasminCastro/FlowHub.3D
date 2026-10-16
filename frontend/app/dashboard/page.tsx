@@ -31,6 +31,7 @@ import {
   SectionLabel,
   StatDivider,
 } from "@/components/prints/print-bits";
+import { FramedPhoto } from "@/components/prints/framed-photo";
 import { useAuth } from "@/contexts/auth-context";
 import { usePageHeaderAction } from "@/contexts/page-header-action-context";
 import { useCostContext } from "@/hooks/use-cost-context";
@@ -269,7 +270,7 @@ function RecentPrintCard({
 }) {
   const perUnit = getPerUnit(getDefaultRecord(item), costs);
   const color = getItemStats(item).colors[0];
-  const cover = item.records.find((r) => r.photos.length)?.photos[0]?.src;
+  const cover = item.records.find((r) => r.photos.length)?.photos[0];
 
   return (
     <Link
@@ -278,8 +279,7 @@ function RecentPrintCard({
     >
       <div className="h-23">
         {cover ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={cover} alt="" className="size-full object-cover" />
+          <FramedPhoto photo={cover} className="size-full" />
         ) : (
           <PhotoPlaceholder className="size-full" />
         )}

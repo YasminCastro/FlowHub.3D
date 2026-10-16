@@ -2,6 +2,7 @@ import Link from "next/link";
 import { GitBranch, Layers, TriangleAlert } from "lucide-react";
 
 import { FilamentDot } from "@/components/journal/journal-status-badge";
+import { FramedPhoto } from "@/components/prints/framed-photo";
 import {
   FAILURE_COLOR,
   PhotoPlaceholder,
@@ -30,7 +31,7 @@ export function PrintCard({
   const perUnit = getPerUnit(base, costs);
   const stats = getItemStats(item);
   const types = [...new Set(base.filaments.map((u) => u.filament.type))];
-  const cover = item.records.find((r) => r.photos.length)?.photos[0]?.src;
+  const cover = item.records.find((r) => r.photos.length)?.photos[0];
 
   return (
     <Link
@@ -39,8 +40,7 @@ export function PrintCard({
     >
       <div className="relative h-33">
         {cover ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={cover} alt="" className="size-full object-cover" />
+          <FramedPhoto photo={cover} className="size-full" />
         ) : (
           <PhotoPlaceholder className="size-full" />
         )}

@@ -153,6 +153,23 @@ export class AddPrintRecordDto extends PrintRecordDto {
 // a lista. changeSummary omitido mantém o texto atual.
 export class UpdatePrintRecordDto extends AddPrintRecordDto {}
 
+// Enquadramento da foto: o ponto (em %) que fica no centro do recorte, ou a
+// foto inteira.
+export class UpdatePrintPhotoDto {
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  focusX: number;
+
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  focusY: number;
+
+  @IsBoolean()
+  contain: boolean;
+}
+
 // A peça nasce com a primeira impressão, que vira o registro padrão.
 export class PrintItemDto {
   @IsString()

@@ -34,6 +34,7 @@ import {
   Stat,
   StatDivider,
 } from "@/components/prints/print-bits";
+import { FramedPhoto } from "@/components/prints/framed-photo";
 import { NotFoundState } from "@/components/dashboard/not-found-state";
 import {
   usePageHeaderAction,
@@ -229,11 +230,10 @@ export default function CatalogItemPage() {
       <div className="grid grid-cols-1 items-start gap-8 md:grid-cols-[320px_minmax(0,1fr)]">
         <div className="flex flex-col gap-2">
           {mainPhoto ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={mainPhoto.src}
+            <FramedPhoto
+              photo={mainPhoto}
               alt={item.name}
-              className="h-75 w-full rounded-md object-cover"
+              className="h-75 w-full rounded-md"
             />
           ) : (
             <PhotoPlaceholder className="h-75 flex-col gap-1.5 rounded-md">
@@ -257,12 +257,7 @@ export default function CatalogItemPage() {
                       "shadow-[inset_0_0_0_1px_var(--brand)]",
                   )}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={photo.src}
-                    alt=""
-                    className="size-full object-cover"
-                  />
+                  <FramedPhoto photo={photo} className="size-full" />
                 </button>
               ))}
             </div>

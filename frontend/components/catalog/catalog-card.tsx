@@ -1,13 +1,12 @@
 import Link from "next/link";
-import { LinkIcon, TriangleAlert } from "lucide-react";
 
 import { FilamentDot } from "@/components/journal/journal-status-badge";
+import { FramedPhoto } from "@/components/prints/framed-photo";
 import { PhotoPlaceholder } from "@/components/prints/print-bits";
 import {
   ResolvedCatalogItem,
   describeKind,
   formatPriceRange,
-  lowColorWarning,
 } from "@/lib/api/catalog";
 
 // Âmbar dos avisos de pouco filamento.
@@ -16,11 +15,8 @@ export const LOW_STOCK_COLOR = "#d9a95c";
 const MAX_DOTS = 6;
 
 export function CatalogCard({ item }: { item: ResolvedCatalogItem }) {
-  const cover = item.photos[0]?.src;
+  const cover = item.photos[0];
   const kindTag = describeKind(item);
-  const lowColor = item.colors.find((c) => c.low);
-  const warning = lowColor ? lowColorWarning(item, lowColor) : null;
-  const linked = item.variants.length;
 
   return (
     <Link
@@ -29,8 +25,7 @@ export function CatalogCard({ item }: { item: ResolvedCatalogItem }) {
     >
       <div className="relative h-37.5">
         {cover ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={cover} alt="" className="size-full object-cover" />
+          <FramedPhoto photo={cover} className="size-full" />
         ) : (
           <PhotoPlaceholder className="size-full" />
         )}
@@ -72,24 +67,6 @@ export function CatalogCard({ item }: { item: ResolvedCatalogItem }) {
               : "Sem cor em estoque"}
           </span>
         </div>
-
-        <span className="h-px bg-linear-to-r from-transparent via-border to-transparent" />
-
-        {warning ? (
-          <div
-            className="flex items-center gap-2 text-[11.5px]"
-            style={{ color: LOW_STOCK_COLOR }}
-          >
-            <TriangleAlert className="size-3.25 shrink-0" aria-hidden="true" />
-            <span className="truncate">{warning}</span>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 text-[11.5px] text-muted-foreground">
-            <LinkIcon className="size-3 shrink-0" aria-hidden="true" />
-            {linked} {linked === 1 ? "impressão" : "impressões"}
-            {item.materials.length > 0 && ` · ${item.materials.join(" + ")}`}
-          </div>
-        )}
       </div>
     </Link>
   );
