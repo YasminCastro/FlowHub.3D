@@ -9,6 +9,7 @@ import {
   ImageIcon,
   LinkIcon,
   ListOrdered,
+  Store,
   Plus,
   Star,
   Trash2,
@@ -41,6 +42,7 @@ import {
 } from "@/contexts/page-header-action-context";
 import { useCostContext } from "@/hooks/use-cost-context";
 import { ApiError } from "@/lib/api/auth";
+import { listCatalogItems } from "@/lib/api/catalog";
 import { usePrintItem } from "@/hooks/use-print-item";
 import {
   PrintFilament,
@@ -129,12 +131,37 @@ export default function PrintItemPage() {
     null,
   );
   const [activePhoto, setActivePhoto] = useState(0);
+  // Impressões já ligadas a algum item do catálogo; null enquanto carrega.
+  const [catalogPrintIds, setCatalogPrintIds] = useState<Set<string> | null>(
+    null,
+  );
 
   useEffect(() => {
     listPrintFilaments()
       .then(setFilaments)
       .catch(() => setFilaments([]));
   }, []);
+
+  useEffect(() => {
+    let ignore = false;
+    listCatalogItems()
+      .then((catalog) => {
+        if (ignore) return;
+        setCatalogPrintIds(
+          new Set(
+            catalog.flatMap((c) => c.variants.map((v) => v.printItemId ?? "")),
+          ),
+        );
+      })
+      // Sem saber se já está no catálogo, o botão não aparece.
+      .catch(() => {});
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  const canAddToCatalog =
+    item != null && catalogPrintIds != null && !catalogPrintIds.has(item.id);
 
   function openSheet(baseId: string | null) {
     setSheetBaseId(baseId);
@@ -188,6 +215,19 @@ export default function PrintItemPage() {
           <ListOrdered />
           Adicionar à fila
         </Button>
+        {canAddToCatalog && (
+          <Button
+            variant="secondary"
+            size="sm"
+            render={
+              <Link href={`/dashboard/catalogo/new?impressao=${item.id}`} />
+            }
+            nativeButton={false}
+          >
+            <Store />
+            Adicionar ao catálogo
+          </Button>
+        )}
         <Button size="sm" onClick={() => openSheet(null)}>
           <Plus />
           Novo registro

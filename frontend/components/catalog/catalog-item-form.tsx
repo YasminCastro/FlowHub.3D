@@ -7,7 +7,6 @@ import {
   Check,
   ChevronRight,
   ImageIcon,
-  LinkIcon,
   Maximize2,
   Plus,
   Shapes,
@@ -28,6 +27,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LOW_STOCK_COLOR } from "@/components/catalog/catalog-card";
+import { PrintPicker } from "@/components/catalog/print-picker";
 import { FilamentDot } from "@/components/journal/journal-status-badge";
 import { parseDecimal } from "@/components/prints/filament-usage-fields";
 import {
@@ -109,14 +109,17 @@ function parsePrice(text: string) {
   return text.trim() ? Math.round(parseDecimal(text) * 100) / 100 : null;
 }
 
-function draftFrom(item: CatalogItem | undefined): Draft {
+function draftFrom(
+  item: CatalogItem | undefined,
+  fromPrintId: string | null,
+): Draft {
   if (!item) {
     return {
       name: "",
       description: "",
       categoryId: "",
       kind: "SINGLE",
-      variants: [emptyVariant()],
+      variants: [{ ...emptyVariant(), printItemId: fromPrintId ?? "" }],
       kitPrice: "",
       photoIds: [],
     };
@@ -197,15 +200,19 @@ function PriceInput({
 
 export function CatalogItemForm({
   item,
+  fromPrintId = null,
   onSubmit,
 }: {
   item?: CatalogItem;
+  // Novo item a partir de uma impressão: já ligado a ela, com nome e categoria.
+  fromPrintId?: string | null;
   onSubmit: (input: CatalogItemInput) => Promise<string>;
 }) {
   const router = useRouter();
   const { data, loadError } = useCatalogData();
   const [categories, setCategories] = useState<CategoryWithUsage[]>([]);
-  const [draft, setDraft] = useState<Draft>(() => draftFrom(item));
+  const [draft, setDraft] = useState<Draft>(() => draftFrom(item, fromPrintId));
+  const [prefilledFrom, setPrefilledFrom] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -261,6 +268,20 @@ export function CatalogItemForm({
   }
 
   const prints = data?.prints ?? [];
+
+  // Nome e categoria da impressão só chegam com os dados; preenche uma vez,
+  // sem apagar o que já foi digitado.
+  if (data && fromPrintId && prefilledFrom !== fromPrintId) {
+    setPrefilledFrom(fromPrintId);
+    const print = data.prints.find((p) => p.id === fromPrintId);
+    if (print) {
+      setDraft((prev) => ({
+        ...prev,
+        name: prev.name || print.name,
+        categoryId: prev.categoryId || print.category?.id || "",
+      }));
+    }
+  }
   const visibleVariants =
     draft.kind === "SINGLE" ? draft.variants.slice(0, 1) : draft.variants;
   const resolved = data
@@ -599,47 +620,14 @@ export function CatalogItemForm({
                         }
                       />
                     )}
-                    <Select
-                      value={v.printItemId || null}
-                      onValueChange={(value) =>
-                        value && setVariant(v.key, { printItemId: value })
+                    <PrintPicker
+                      prints={prints}
+                      value={v.printItemId}
+                      onChange={(printItemId) =>
+                        setVariant(v.key, { printItemId })
                       }
-                    >
-                      <SelectTrigger
-                        aria-label="Impressão"
-                        className="col-span-2 w-full md:col-span-1"
-                      >
-                        <SelectValue>
-                          {(value: string) => {
-                            const p = prints.find(
-                              (print) => print.id === value,
-                            );
-                            return p ? (
-                              <>
-                                <LinkIcon
-                                  className="size-3.25 opacity-60"
-                                  aria-hidden="true"
-                                />
-                                {p.name}
-                              </>
-                            ) : (
-                              <span className="text-muted-foreground">
-                                {value
-                                  ? "Impressão excluída"
-                                  : "Escolha a impressão"}
-                              </span>
-                            );
-                          }}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {prints.map((p) => (
-                          <SelectItem key={p.id} value={p.id}>
-                            {p.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      className="col-span-2 md:col-span-1"
+                    />
                     <span className="text-right text-[12.5px] text-muted-foreground tabular-nums">
                       {r.cost != null ? formatBRL(r.cost) : "–"}
                     </span>
