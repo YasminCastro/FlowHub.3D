@@ -38,6 +38,7 @@ describe('PrintService', () => {
     printPhoto: { createMany: AsyncMock; delete: AsyncMock };
     printer: { findFirst: AsyncMock };
     filament: { findMany: AsyncMock };
+    extraItem: { findMany: AsyncMock };
     category: { findFirst: AsyncMock };
     $transaction: AsyncMock;
   };
@@ -48,6 +49,7 @@ describe('PrintService', () => {
   const printerId = '5f0c7c1e-8a52-4a8e-9a7d-0d1c2b3a4f5e';
   const filamentId = '0b6c5a3e-1d0a-4c2b-9a51-1c1f3e2d4b5a';
   const categoryId = '7d1e2f3a-4b5c-4d6e-8f70-819a2b3c4d5e';
+  const extraItemId = '3c2b1a09-8f7e-4d6c-9b5a-4e3d2c1b0a9f';
 
   const filament = {
     id: filamentId,
@@ -96,6 +98,17 @@ describe('PrintService', () => {
           filamentId,
           recordId: 'rec-1',
           filament: { spoolLevel: 'FULL' },
+        },
+      ],
+      extraItems: [
+        {
+          id: 'extra-use-1',
+          position: 0,
+          quantity: 1,
+          unitCost: 0.25,
+          name: 'Argola',
+          extraItemId,
+          recordId: 'rec-1',
         },
       ],
       photos: [],
@@ -174,6 +187,7 @@ describe('PrintService', () => {
       printPhoto: { createMany: jest.fn(), delete: jest.fn() },
       printer: { findFirst: jest.fn() },
       filament: { findMany: jest.fn() },
+      extraItem: { findMany: jest.fn() },
       category: { findFirst: jest.fn() },
       $transaction: jest.fn((operations: unknown) =>
         Promise.all(operations as Promise<unknown>[]),
@@ -553,6 +567,98 @@ describe('PrintService', () => {
         data: { isDefault: false },
       });
       expect(dataOf(prisma.printRecord.update).isDefault).toBe(true);
+    });
+  });
+
+  describe('itens extras', () => {
+    beforeEach(() => {
+      prisma.printItem.findFirst.mockResolvedValue(
+        itemRow([
+          recordRow({ id: 'rec-2', isDefault: false }),
+          recordRow({ extraItems: [] }),
+        ]),
+      );
+      ownsEverything();
+    });
+
+    it('item novo entra com o custo unitário do lote mais recente', async () => {
+      prisma.extraItem.findMany.mockResolvedValue([
+        { id: extraItemId, name: 'Ímã', lots: [{ price: 30, quantity: 100 }] },
+      ]);
+
+      await service.addRecord(itemId, userId, {
+        ...record,
+        extraItems: [{ extraItemId, quantity: 2 }],
+      });
+
+      expect(dataOf(prisma.printRecord.create).extraItems).toEqual({
+        create: [
+          {
+            position: 0,
+            quantity: 2,
+            unitCost: 0.3,
+            name: 'Ímã',
+            extraItemId,
+          },
+        ],
+      });
+    });
+
+    it('lança NotFoundException se o item extra não é do usuário', async () => {
+      prisma.extraItem.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.addRecord(itemId, userId, {
+          ...record,
+          extraItems: [{ extraItemId, quantity: 1 }],
+        }),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.printRecord.create).not.toHaveBeenCalled();
+    });
+
+    it('lança BadRequestException com item extra repetido', async () => {
+      await expect(
+        service.addRecord(itemId, userId, {
+          ...record,
+          extraItems: [
+            { extraItemId, quantity: 1 },
+            { extraItemId, quantity: 2 },
+          ],
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('na edição, mantém o custo do dia do item que já estava', async () => {
+      await service.updateRecord(itemId, 'rec-2', userId, {
+        ...record,
+        extraItems: [{ extraItemId, quantity: 3 }],
+      });
+
+      expect(prisma.extraItem.findMany).not.toHaveBeenCalled();
+      expect(dataOf(prisma.printRecord.update).extraItems).toEqual({
+        deleteMany: {},
+        create: [expect.objectContaining({ quantity: 3, unitCost: 0.25 })],
+      });
+    });
+
+    it('na edição sem a lista, os itens extras ficam como estavam', async () => {
+      await service.updateRecord(itemId, 'rec-2', userId, record);
+
+      expect(dataOf(prisma.printRecord.update)).not.toHaveProperty(
+        'extraItems',
+      );
+    });
+
+    it('devolve os itens extras do registro', async () => {
+      const result = await service.getItemById(itemId, userId);
+
+      expect(result.records[0].extraItems).toEqual([
+        {
+          id: 'extra-use-1',
+          quantity: 1,
+          extraItem: { id: extraItemId, name: 'Argola', unitCost: 0.25 },
+        },
+      ]);
     });
   });
 

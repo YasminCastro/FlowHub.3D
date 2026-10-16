@@ -70,6 +70,7 @@ import {
   PrintOutcome,
   PrintRecordInput,
   computeCost,
+  computeCostPerUnit,
   describeChanges,
   describePrintFilament,
   formatDuration,
@@ -218,18 +219,15 @@ export function QueueCompleteForm({ entryId }: { entryId: string }) {
   }));
   const recordMinutes = durationToMinutes(realTime) ?? plannedMinutes;
 
-  const cost = costs
-    ? computeCost(
-        {
-          filaments: recordUsages,
-          totalMinutes: recordMinutes,
-          units,
-          outcome,
-          printer: { id: printerId },
-        },
-        costs,
-      )
-    : null;
+  const costInput = {
+    filaments: recordUsages,
+    totalMinutes: recordMinutes,
+    units,
+    outcome,
+    printer: { id: printerId },
+  };
+  const cost = costs ? computeCost(costInput, costs) : null;
+  const costPerUnit = costs ? computeCostPerUnit(costInput, costs) : null;
 
   const failureReason =
     reason === OTHER_REASON ? otherReason.trim() : (reason ?? "");
@@ -903,7 +901,9 @@ export function QueueCompleteForm({ entryId }: { entryId: string }) {
             {!isFailure && (
               <div className="flex">
                 <span>Por unidade</span>
-                <span className="ml-auto">{formatBRL(cost.total / units)}</span>
+                <span className="ml-auto">
+                  {formatBRL(costPerUnit!.total)}
+                </span>
               </div>
             )}
           </div>

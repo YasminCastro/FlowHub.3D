@@ -18,6 +18,7 @@ export function isNotFoundError(err: unknown) {
 // read by an XSS payload. Session persistence across reloads comes from
 // the httpOnly refresh-token cookie via refreshAccessToken().
 let accessToken: string | null = null;
+const tokenListeners = new Set<(token: string | null) => void>();
 
 export function getAccessToken() {
   return accessToken;
@@ -25,6 +26,50 @@ export function getAccessToken() {
 
 export function setAccessToken(token: string | null) {
   accessToken = token;
+  tokenListeners.forEach((listener) => listener(token));
+}
+
+// O AuthContext acompanha as renovações feitas aqui dentro (e a sessão que
+// expirou de vez), sem precisar recarregar a página.
+export function onAccessTokenChange(listener: (token: string | null) => void) {
+  tokenListeners.add(listener);
+  return () => {
+    tokenListeners.delete(listener);
+  };
+}
+
+// O backend troca o refresh token a cada renovação: duas em paralelo fariam a
+// segunda chegar com o cookie já invalidado. Quem pedir durante uma renovação
+// espera a mesma.
+let refreshing: Promise<string | null> | null = null;
+
+export function refreshAccessToken() {
+  refreshing ??= requestNewAccessToken().finally(() => {
+    refreshing = null;
+  });
+  return refreshing;
+}
+
+async function requestNewAccessToken() {
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+    });
+  } catch {
+    setAccessToken(null);
+    return null;
+  }
+
+  if (!res.ok) {
+    setAccessToken(null);
+    return null;
+  }
+
+  const data = (await res.json()) as { accessToken: string };
+  setAccessToken(data.accessToken);
+  return data.accessToken;
 }
 
 // Decodes the JWT payload for display purposes only (e.g. showing the
@@ -57,20 +102,37 @@ async function parseResponse(res: Response) {
 // and always sends the httpOnly refresh cookie, so callers never handle
 // auth headers themselves.
 export async function apiFetch(path: string, init: RequestInit = {}) {
+  const sentToken = accessToken;
+  let res = await send(path, init, sentToken);
+
+  // O access token dura pouco (15 min). Expirou no meio do uso: renova pelo
+  // cookie e tenta de novo uma vez. Sem token (login, cadastro) o 401 é
+  // resposta de verdade.
+  if (res.status === 401 && sentToken) {
+    // Outra requisição pode já ter renovado enquanto esta estava no ar.
+    const token =
+      accessToken && accessToken !== sentToken
+        ? accessToken
+        : await refreshAccessToken();
+    if (token) res = await send(path, init, token);
+  }
+
+  return parseResponse(res);
+}
+
+function send(path: string, init: RequestInit, token: string | null) {
   const headers = new Headers(init.headers);
   // Upload (FormData): o navegador monta o Content-Type com o boundary.
   if (!(init.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
-  if (accessToken) {
-    headers.set("Authorization", `Bearer ${accessToken}`);
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const res = await fetch(`${API_URL}${path}`, {
+  return fetch(`${API_URL}${path}`, {
     ...init,
     headers,
     credentials: "include",
   });
-
-  return parseResponse(res);
 }

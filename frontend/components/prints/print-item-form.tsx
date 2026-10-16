@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Check, ChevronRight, Plus, Upload, X } from "lucide-react";
+import { Combobox } from "@base-ui/react/combobox";
+import { Check, ChevronDown, ChevronRight, Plus, Upload, X } from "lucide-react";
 import { ReactNode, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,12 @@ import {
   toUsages,
 } from "@/components/prints/filament-usage-fields";
 import {
+  ExtraItemUsageDraft,
+  ExtraItemUsageFields,
+  extraItemDraftFrom,
+  toExtraItemUsages,
+} from "@/components/prints/extra-item-usage-fields";
+import {
   DurationDraft,
   DurationInput,
   EMPTY_DURATION,
@@ -46,29 +53,103 @@ import { useCostContext } from "@/hooks/use-cost-context";
 import { Category, listCategories } from "@/lib/api/category";
 import {
   INFILL_PATTERNS,
+  PrintExtraItem,
   PrintFilament,
   PrintItem,
   PrintRecord,
   SLICERS,
   DEFAULT_SLICER_SETTINGS,
   SlicerSettings,
-  computeCost,
+  computeCostPerUnit,
   costRows,
   createPrintItem,
+  describeExtraItemUsage,
   describePrintFilament,
-  divideCost,
   findCostPrinter,
   formatDecimal,
   formatDuration,
   formatGrams,
   getDefaultRecord,
   getMissingPrinterCosts,
+  listPrintExtraItems,
   listPrintFilaments,
   listPrintItems,
 } from "@/lib/api/print";
 import { cn, formatBRL } from "@/lib/utils";
 
 const NO_PARENT = "none";
+
+// Select de categoria com busca: digita para filtrar a lista.
+function CategoryCombobox({
+  categories,
+  value,
+  onChange,
+}: {
+  categories: Category[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const selected = categories.find((c) => c.id === value) ?? null;
+  return (
+    <Combobox.Root
+      items={categories}
+      value={selected}
+      onValueChange={(c: Category | null) => onChange(c?.id ?? "")}
+      itemToStringLabel={(c: Category) => c.name}
+      isItemEqualToValue={(a: Category, b: Category) => a.id === b.id}
+    >
+      <div className="relative">
+        {selected && (
+          <span
+            className="pointer-events-none absolute top-1/2 left-2.5 size-2.5 -translate-y-1/2 rounded-[3px]"
+            style={{ background: selected.color }}
+          />
+        )}
+        <Combobox.Input
+          aria-label="Categoria"
+          placeholder="Escolha a categoria"
+          className={cn(
+            "h-9 w-full min-w-0 rounded-md border border-input bg-card py-1 pr-8 pl-2.5 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-brand focus-visible:ring-3 focus-visible:ring-brand/50 md:text-sm",
+            selected && "pl-7",
+          )}
+        />
+        <Combobox.Trigger
+          aria-label="Abrir categorias"
+          className="absolute top-0 right-0 flex h-9 w-8 items-center justify-center text-muted-foreground"
+        >
+          <ChevronDown className="size-4" />
+        </Combobox.Trigger>
+      </div>
+      <Combobox.Portal>
+        <Combobox.Positioner sideOffset={4} className="isolate z-50">
+          <Combobox.Popup className="max-h-[min(18rem,var(--available-height))] w-(--anchor-width) min-w-36 overflow-y-auto rounded-lg bg-popover p-1 scrollbar-nocturne text-popover-foreground shadow-md ring-1 ring-foreground/10">
+            <Combobox.Empty className="px-2 py-1.5 text-sm text-muted-foreground empty:hidden">
+              Nenhuma categoria encontrada.
+            </Combobox.Empty>
+            <Combobox.List>
+              {(c: Category) => (
+                <Combobox.Item
+                  key={c.id}
+                  value={c}
+                  className="relative flex w-full cursor-default items-center gap-2 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground"
+                >
+                  <span
+                    className="size-2.5 shrink-0 rounded-[3px]"
+                    style={{ background: c.color }}
+                  />
+                  {c.name}
+                  <Combobox.ItemIndicator className="absolute right-2 flex size-4 items-center justify-center">
+                    <Check className="size-4" />
+                  </Combobox.ItemIndicator>
+                </Combobox.Item>
+              )}
+            </Combobox.List>
+          </Combobox.Popup>
+        </Combobox.Positioner>
+      </Combobox.Portal>
+    </Combobox.Root>
+  );
+}
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -88,6 +169,8 @@ type Draft = {
   time: DurationDraft;
   units: string;
   usages: FilamentUsageDraft[];
+  // Ímãs, argolas...: opcional, com a quantidade por peça.
+  extraItems: ExtraItemUsageDraft[];
   // A configuração do fatiador é opcional: só vai se o usuário abrir.
   hasSettings: boolean;
   slicer: string;
@@ -110,6 +193,7 @@ const EMPTY_DRAFT: Draft = {
   time: EMPTY_DURATION,
   units: "1",
   usages: [EMPTY_USAGE],
+  extraItems: [],
   ...settingsDraft(null),
   note: "",
 };
@@ -137,6 +221,7 @@ function draftFromParent(parent: PrintItem, record: PrintRecord): Draft {
     time: minutesToDuration(record.totalMinutes),
     units: String(record.units),
     usages: record.filaments.map((u) => usageDraftFrom(u.filament, u.grams)),
+    extraItems: record.extraItems.map((u) => extraItemDraftFrom(u)),
     ...settingsDraft(record.settings),
   };
 }
@@ -207,6 +292,9 @@ export function PrintItemForm() {
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [items, setItems] = useState<PrintItem[]>([]);
   const [filaments, setFilaments] = useState<PrintFilament[]>([]);
+  const [extraItemOptions, setExtraItemOptions] = useState<PrintExtraItem[]>(
+    [],
+  );
   const [categories, setCategories] = useState<Category[]>([]);
   const [showExtras, setShowExtras] = useState(false);
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
@@ -222,8 +310,17 @@ export function PrintItemForm() {
     listPrintFilaments()
       .then(setFilaments)
       .catch(() => setFilaments([]));
+    listPrintExtraItems()
+      .then(setExtraItemOptions)
+      .catch(() => setExtraItemOptions([]));
     listCategories()
-      .then(setCategories)
+      .then((list) =>
+        setCategories(
+          [...list].sort((a, b) =>
+            a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" }),
+          ),
+        ),
+      )
       .catch(() => setCategories([]));
     listPrintItems().then((result) => {
       setItems(result);
@@ -251,21 +348,20 @@ export function PrintItemForm() {
   const minutes = durationToMinutes(draft.time) ?? 0;
   const usages = toUsages(draft.usages, filaments);
   const grams = usages.reduce((sum, u) => sum + u.grams, 0);
+  const extraItems = toExtraItemUsages(draft.extraItems, extraItemOptions);
   const printerId = draft.printerId || printers[0]?.id || "";
   const printer = costs ? findCostPrinter(costs, printerId) : null;
   const perUnitCost = costs
-    ? divideCost(
-        computeCost(
-          {
-            filaments: usages,
-            totalMinutes: minutes,
-            units,
-            outcome: "SUCCESS",
-            printer: { id: printerId },
-          },
-          costs,
-        ),
-        units,
+    ? computeCostPerUnit(
+        {
+          filaments: usages,
+          extraItems,
+          totalMinutes: minutes,
+          units,
+          outcome: "SUCCESS",
+          printer: { id: printerId },
+        },
+        costs,
       )
     : null;
   const missingPrinterCosts = costs ? getMissingPrinterCosts(printer) : [];
@@ -298,6 +394,10 @@ export function PrintItemForm() {
     if (usages.some((u) => u.grams <= 0))
       return "Informe as gramas de cada filamento.";
     if (minutes <= 0) return "Informe o tempo total.";
+    if (draft.extraItems.some((row) => !row.extraItemId))
+      return "Escolha o item extra ou remova a linha.";
+    if (extraItems.some((u) => u.quantity < 1))
+      return "Informe quantos de cada item extra vão por peça.";
     return null;
   }
 
@@ -317,6 +417,7 @@ export function PrintItemForm() {
             printedAt: toIso(draft.date),
             printer: { id: printer!.id, name: printer!.name },
             filaments: usages,
+            extraItems,
             units,
             totalMinutes: minutes,
             settings: draft.hasSettings
@@ -502,42 +603,11 @@ export function PrintItemForm() {
               </Field>
               <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
                 <Field label="Categoria">
-                  <Select
-                    value={draft.categoryId || null}
-                    onValueChange={(value) => set("categoryId", value ?? "")}
-                  >
-                    <SelectTrigger aria-label="Categoria" className="w-full">
-                      <SelectValue>
-                        {(value: string) => {
-                          const c = categories.find((o) => o.id === value);
-                          return c ? (
-                            <span className="flex items-center gap-2">
-                              <span
-                                className="size-2.5 rounded-[3px]"
-                                style={{ background: c.color }}
-                              />
-                              {c.name}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">
-                              Escolha a categoria
-                            </span>
-                          );
-                        }}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categories.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          <span
-                            className="size-2.5 rounded-[3px]"
-                            style={{ background: c.color }}
-                          />
-                          {c.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <CategoryCombobox
+                    categories={categories}
+                    value={draft.categoryId}
+                    onChange={(id) => set("categoryId", id)}
+                  />
                 </Field>
                 <Field
                   label={
@@ -659,6 +729,14 @@ export function PrintItemForm() {
               value={draft.usages}
               onChange={(next) => set("usages", next)}
               filaments={filaments}
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <SectionLabel>Itens extras</SectionLabel>
+            <ExtraItemUsageFields
+              value={draft.extraItems}
+              onChange={(next) => set("extraItems", next)}
+              items={extraItemOptions}
             />
           </div>
         </Step>
@@ -908,6 +986,27 @@ export function PrintItemForm() {
               <span className="text-[11px] text-muted-foreground/80">
                 Gasto na impressão. O nível do rolo continua marcado à mão em
                 Filamentos.
+              </span>
+            </div>
+          </>
+        )}
+        {extraItems.length > 0 && (
+          <>
+            <Separator />
+            <div className="flex flex-col gap-2">
+              {extraItems.map((usage) => (
+                <div
+                  key={usage.extraItem.id}
+                  className="flex items-center text-xs text-muted-foreground tabular-nums"
+                >
+                  {describeExtraItemUsage(usage)} / peça
+                  <span className="ml-auto">
+                    {formatBRL(usage.quantity * usage.extraItem.unitCost)}
+                  </span>
+                </div>
+              ))}
+              <span className="text-[11px] text-muted-foreground/80">
+                Custo do lote mais recente em Itens extras.
               </span>
             </div>
           </>

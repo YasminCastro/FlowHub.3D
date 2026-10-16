@@ -13,6 +13,7 @@ import {
   forgotPassword as forgotPasswordRequest,
   login as loginRequest,
   logout as logoutRequest,
+  onAccessTokenChange,
   refreshAccessToken,
   resendCode as resendCodeRequest,
   resetPassword as resetPasswordRequest,
@@ -51,6 +52,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       ? { id: payload.sub, email: payload.email, name: payload.name }
       : null;
   }, [accessToken]);
+
+  // Renovação feita no meio de uma requisição atualiza o usuário; sessão que
+  // expirou de vez (refresh recusado) zera e o dashboard manda para o login.
+  useEffect(() => onAccessTokenChange(setAccessTokenState), []);
 
   useEffect(() => {
     refreshAccessToken()

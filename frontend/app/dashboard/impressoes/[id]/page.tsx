@@ -47,6 +47,7 @@ import { listCatalogItems } from "@/lib/api/catalog";
 import { usePrintItem } from "@/hooks/use-print-item";
 import {
   PrintFilament,
+  PrintExtraItem,
   PrintOutcome,
   PrintRecord,
   formatDuration,
@@ -56,6 +57,7 @@ import {
   getLostCost,
   getWorstCasePerUnit,
   getPerUnit,
+  listPrintExtraItems,
   listPrintFilaments,
   setDefaultPrintRecord,
   updatePrintPhoto,
@@ -115,6 +117,7 @@ export default function PrintItemPage() {
   const isLoading = isLoadingItem || (!costs && !costsError);
   const loadError = itemError ?? costsError;
   const [filaments, setFilaments] = useState<PrintFilament[]>([]);
+  const [extraItems, setExtraItems] = useState<PrintExtraItem[]>([]);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [sheetBaseId, setSheetBaseId] = useState<string | null>(null);
   // Com um id, o painel edita esse registro em vez de criar um novo.
@@ -142,6 +145,9 @@ export default function PrintItemPage() {
     listPrintFilaments()
       .then(setFilaments)
       .catch(() => setFilaments([]));
+    listPrintExtraItems()
+      .then(setExtraItems)
+      .catch(() => setExtraItems([]));
   }, []);
 
   useEffect(() => {
@@ -588,6 +594,7 @@ export default function PrintItemPage() {
         baseRecordId={sheetBaseId}
         editRecordId={sheetEditId}
         filaments={filaments}
+        extraItems={extraItems}
         costs={costs}
         onSaved={(updated, photoError) => {
           setItem(updated);

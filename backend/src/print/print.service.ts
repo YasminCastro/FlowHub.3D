@@ -11,6 +11,7 @@ import {
   PRINT_MAX_PHOTOS,
   UpdatePrintPhotoDto,
   UpdatePrintRecordDto,
+  PrintExtraItemUsageDto,
   PrintFilamentUsageDto,
   PrintItemDto,
   PrintRecordDto,
@@ -24,6 +25,7 @@ const recordInclude = {
     orderBy: { position: 'asc' },
     include: { filament: { select: { spoolLevel: true } } },
   },
+  extraItems: { orderBy: { position: 'asc' } },
   photos: {
     select: {
       id: true,
@@ -56,6 +58,7 @@ type RecordWithRelations = ItemWithRelations['records'][number];
 export type UploadedPhoto = { buffer: Buffer };
 
 type ExistingUsage = RecordWithRelations['filaments'][number];
+type ExistingExtraItem = RecordWithRelations['extraItems'][number];
 
 // Preço por grama: média do que já foi pago pelo rolo, dividida pelo peso.
 export function filamentPricePerGram(filament: {
@@ -211,6 +214,79 @@ export class PrintService {
     });
   }
 
+  // Como nos filamentos: cada item extra entra com o custo unitário de hoje
+  // (o do lote mais recente) e o nome de hoje; na edição, o que o registro já
+  // tinha mantém o custo do dia em que foi registrado.
+  private async snapshotExtraItems(
+    userId: string,
+    usages: PrintExtraItemUsageDto[],
+    existing: ExistingExtraItem[] = [],
+  ) {
+    const rows = usages.map((usage) => {
+      if (usage.usageId) {
+        const kept = existing.find((e) => e.id === usage.usageId);
+        if (!kept) {
+          throw new NotFoundException('Item extra do registro não encontrado.');
+        }
+        return { usage, kept };
+      }
+      if (!usage.extraItemId) {
+        throw new BadRequestException('Escolha o item extra.');
+      }
+      const kept = existing.find((e) => e.extraItemId === usage.extraItemId);
+      return { usage, kept: kept ?? null };
+    });
+
+    const keys = rows.map(
+      ({ usage, kept }) => kept?.extraItemId ?? kept?.id ?? usage.extraItemId,
+    );
+    if (new Set(keys).size !== keys.length) {
+      throw new BadRequestException('Item extra repetido no registro.');
+    }
+
+    const newIds = rows
+      .filter((row) => !row.kept)
+      .map((row) => row.usage.extraItemId!);
+    const items = newIds.length
+      ? await this.prisma.extraItem.findMany({
+          where: { id: { in: newIds }, userId },
+          select: {
+            id: true,
+            name: true,
+            lots: {
+              select: { price: true, quantity: true },
+              orderBy: [{ purchasedAt: 'desc' }, { createdAt: 'desc' }],
+              take: 1,
+            },
+          },
+        })
+      : [];
+    if (items.length !== newIds.length) {
+      throw new NotFoundException('Item extra não encontrado.');
+    }
+
+    return rows.map(({ usage, kept }, position) => {
+      if (kept) {
+        return {
+          position,
+          quantity: usage.quantity,
+          unitCost: kept.unitCost,
+          name: kept.name,
+          extraItemId: kept.extraItemId,
+        };
+      }
+      const item = items.find((i) => i.id === usage.extraItemId)!;
+      const lot = item.lots[0];
+      return {
+        position,
+        quantity: usage.quantity,
+        unitCost: lot && lot.quantity > 0 ? lot.price / lot.quantity : 0,
+        name: item.name,
+        extraItemId: item.id,
+      };
+    });
+  }
+
   // "   " passa no @IsNotEmpty, mas vira texto vazio depois do trim.
   private requireText(value: string, message: string) {
     const trimmed = value.trim();
@@ -226,6 +302,7 @@ export class PrintService {
     userId: string,
     data: PrintRecordDto,
     existing: ExistingUsage[] = [],
+    existingExtraItems: ExistingExtraItem[] = [],
   ) {
     const isFailure = data.outcome === 'FAILURE';
     const failureReason = this.normalizeOptional(data.failureReason);
@@ -249,6 +326,15 @@ export class PrintService {
       data.filaments,
       existing,
     );
+    // Sem a lista, nada muda: o registro novo fica sem itens extras e o
+    // editado mantém os que tinha.
+    const extraItems = data.extraItems
+      ? await this.snapshotExtraItems(
+          userId,
+          data.extraItems,
+          existingExtraItems,
+        )
+      : undefined;
     const settings = data.settings
       ? {
           slicer: this.requireText(data.settings.slicer, 'Informe o fatiador.'),
@@ -284,6 +370,7 @@ export class PrintService {
       note: this.normalizeOptional(data.note),
       changeSummary: this.normalizeOptional(data.changeSummary),
       filaments: { create: filaments },
+      extraItems: extraItems && { create: extraItems },
     };
   }
 
@@ -314,6 +401,7 @@ export class PrintService {
     temperatureC,
     extras,
     filaments,
+    extraItems,
     photos,
     ...record
   }: RecordWithRelations) {
@@ -353,6 +441,16 @@ export class PrintService {
           colors: usage.colors,
           pricePerGram: usage.pricePerGram,
           spoolLevel: usage.filament?.spoolLevel ?? null,
+        },
+      })),
+      extraItems: extraItems.map((usage) => ({
+        id: usage.id,
+        quantity: usage.quantity,
+        extraItem: {
+          // null quando o item foi excluído; nome e custo são do dia.
+          id: usage.extraItemId,
+          name: usage.name,
+          unitCost: usage.unitCost,
         },
       })),
       photos: photos.map((photo) => ({
@@ -486,14 +584,15 @@ export class PrintService {
           : 'Só um registro que deu certo pode ser o padrão.',
       );
     }
-    const { filaments, ...record } = await this.buildRecordData(
+    const { filaments, extraItems, ...record } = await this.buildRecordData(
       userId,
       data,
       current.filaments,
+      current.extraItems,
     );
     const makeDefault = !current.isDefault && (data.makeDefault ?? false);
 
-    // Os filamentos enviados substituem a lista. Virar padrão desmarca o
+    // Os filamentos (e os itens extras, se vierem) enviados substituem a lista. Virar padrão desmarca o
     // atual na mesma transação.
     await this.prisma.$transaction([
       ...(makeDefault
@@ -516,6 +615,9 @@ export class PrintService {
               : current.changeSummary,
           ...(makeDefault && { isDefault: true }),
           filaments: { deleteMany: {}, create: filaments.create },
+          ...(extraItems && {
+            extraItems: { deleteMany: {}, create: extraItems.create },
+          }),
         },
       }),
     ]);

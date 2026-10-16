@@ -25,6 +25,9 @@ export const PRINT_URL_MAX_LENGTH = 500;
 export const PRINT_TEXT_MAX_LENGTH = 500;
 export const PRINT_SHORT_TEXT_MAX_LENGTH = 60;
 export const PRINT_MAX_FILAMENTS = 16;
+export const PRINT_MAX_EXTRA_ITEMS = 16;
+// Por peça: ímãs, argolas... nunca passa de algumas dezenas.
+export const PRINT_MAX_EXTRA_QUANTITY = 1_000;
 export const PRINT_MAX_UNITS = 10_000;
 // Uma semana de impressão contínua.
 export const PRINT_MAX_MINUTES = 7 * 24 * 60;
@@ -51,6 +54,24 @@ export class PrintFilamentUsageDto {
   @Min(0)
   @Max(PRINT_MAX_GRAMS)
   grams!: number;
+}
+
+// Um dos dois, como no filamento: o item extra escolhido, ou (na edição) o uso
+// que o registro já tem, para manter um item que foi excluído depois.
+export class PrintExtraItemUsageDto {
+  @IsOptional()
+  @IsUUID()
+  extraItemId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  usageId?: string;
+
+  // Quantos vão em cada peça; o total multiplica pelas unidades.
+  @IsInt()
+  @Min(1)
+  @Max(PRINT_MAX_EXTRA_QUANTITY)
+  quantity!: number;
 }
 
 export class SlicerSettingsDto {
@@ -105,6 +126,15 @@ export class PrintRecordDto {
   @Type(() => PrintFilamentUsageDto)
   filaments!: PrintFilamentUsageDto[];
 
+  // Opcional: omitido na criação, o registro fica sem itens extras; na
+  // edição, mantém os que ele já tinha.
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(PRINT_MAX_EXTRA_ITEMS)
+  @ValidateNested({ each: true })
+  @Type(() => PrintExtraItemUsageDto)
+  extraItems?: PrintExtraItemUsageDto[];
+
   @IsInt()
   @Min(1)
   @Max(PRINT_MAX_UNITS)
@@ -149,8 +179,8 @@ export class AddPrintRecordDto extends PrintRecordDto {
   makeDefault?: boolean;
 }
 
-// Na edição o registro inteiro é reenviado; os filamentos enviados substituem
-// a lista. changeSummary omitido mantém o texto atual.
+// Na edição o registro inteiro é reenviado; os filamentos (e os itens extras,
+// se vierem) substituem a lista. changeSummary omitido mantém o texto atual.
 export class UpdatePrintRecordDto extends AddPrintRecordDto {}
 
 // Enquadramento da foto: o ponto (em %) que fica no centro do recorte, ou a

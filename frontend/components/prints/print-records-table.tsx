@@ -159,6 +159,17 @@ function RecordDetails({
             </span>
           </div>
         ))}
+        {record.extraItems.map((usage) => (
+          <div
+            key={usage.extraItem.id}
+            className="flex items-center text-[12.5px] text-foreground/72"
+          >
+            {usage.extraItem.name}
+            <span className="ml-auto tabular-nums">
+              {usage.quantity} / peça
+            </span>
+          </div>
+        ))}
         {record.note && (
           <p className="mt-1 text-[12px] text-muted-foreground">
             {record.note}

@@ -44,6 +44,12 @@ import {
   toUsages,
 } from "@/components/prints/filament-usage-fields";
 import {
+  ExtraItemUsageDraft,
+  ExtraItemUsageFields,
+  extraItemDraftFrom,
+  toExtraItemUsages,
+} from "@/components/prints/extra-item-usage-fields";
+import {
   ChangedMark,
   DurationInput,
   EMPTY_DURATION,
@@ -60,6 +66,7 @@ import { FramedPhoto } from "@/components/prints/framed-photo";
 import {
   DEFAULT_SLICER_SETTINGS,
   FAILURE_REASONS,
+  PrintExtraItem,
   PrintFilament,
   PrintItem,
   PrintOutcome,
@@ -70,12 +77,14 @@ import {
   updatePrintRecord,
   CostContext,
   computeCost,
+  computeCostPerUnit,
   describeChanges,
   describePrintFilament,
   formatDecimal,
   formatDuration,
   formatGrams,
   getRecordGrams,
+  isDeletedExtraItem,
   isDeletedFilament,
 } from "@/lib/api/print";
 import { cn, formatBRL, formatDatePtBR } from "@/lib/utils";
@@ -115,6 +124,7 @@ function RecordForm({
   base,
   isEditing,
   filaments,
+  extraItems,
   costs,
   onChangeBase,
   onCancel,
@@ -125,6 +135,7 @@ function RecordForm({
   base: PrintRecord;
   isEditing: boolean;
   filaments: PrintFilament[];
+  extraItems: PrintExtraItem[];
   costs: CostContext;
   onChangeBase: (recordId: string) => void;
   onCancel: () => void;
@@ -158,6 +169,23 @@ function RecordForm({
   const [usages, setUsages] = useState<FilamentUsageDraft[]>(
     base.filaments.map((u) =>
       usageDraftFrom(u.filament, u.grams, { keepDeleted: isEditing }),
+    ),
+  );
+  // Como nos filamentos: na edição, o item extra excluído continua.
+  const extraItemOptions = [
+    ...extraItems,
+    ...base.extraItems
+      .map((u) => u.extraItem)
+      .filter(
+        (i) =>
+          isEditing &&
+          isDeletedExtraItem(i) &&
+          !extraItems.some((option) => option.id === i.id),
+      ),
+  ];
+  const [extraItemDrafts, setExtraItemDrafts] = useState<ExtraItemUsageDraft[]>(
+    base.extraItems.map((u) =>
+      extraItemDraftFrom(u, { keepDeleted: isEditing }),
     ),
   );
   const [time, setTime] = useState(minutesToDuration(base.totalMinutes));
@@ -212,6 +240,7 @@ function RecordForm({
   const selectedPrinter = printerOptions.find((p) => p.id === printerId);
   const printer = selectedPrinter ?? base.printer;
   const parsedUsages = toUsages(usages, filamentOptions);
+  const parsedExtraItems = toExtraItemUsages(extraItemDrafts, extraItemOptions);
   const plannedMinutes = durationToMinutes(time) ?? 0;
 
   // Gramas e tempo acompanham as unidades, a partir do padrão por unidade,
@@ -264,6 +293,9 @@ function RecordForm({
       usages.map((u) => u.filamentId).join() !==
       base.filaments.map((u) => u.filament.id).join(),
     units: unitCount !== base.units,
+    extraItems:
+      extraItemDrafts.map((u) => `${u.extraItemId}:${u.quantity}`).join() !==
+      base.extraItems.map((u) => `${u.extraItem.id}:${u.quantity}`).join(),
     layerHeightMm: settingDiffers("layerHeightMm"),
     infillPercent: settingDiffers("infillPercent"),
     walls: settingDiffers("walls"),
@@ -279,6 +311,7 @@ function RecordForm({
   const changeSummary = describeChanges(base, {
     printer,
     filaments: parsedUsages,
+    extraItems: parsedExtraItems,
     units: unitCount,
     settings: nextSettings,
   });
@@ -299,16 +332,16 @@ function RecordForm({
   const recordMinutes = isFailure
     ? (durationToMinutes(failureTime) ?? 0)
     : plannedMinutes;
-  const cost = computeCost(
-    {
-      filaments: recordUsages,
-      totalMinutes: recordMinutes,
-      units: unitCount,
-      outcome,
-      printer,
-    },
-    costs,
-  );
+  const costInput = {
+    filaments: recordUsages,
+    extraItems: parsedExtraItems,
+    totalMinutes: recordMinutes,
+    units: unitCount,
+    outcome,
+    printer,
+  };
+  const cost = computeCost(costInput, costs);
+  const costPerUnit = computeCostPerUnit(costInput, costs);
   const failureReason =
     reason === OTHER_REASON ? otherReason.trim() : (reason ?? "");
 
@@ -332,6 +365,10 @@ function RecordForm({
       return "O registro padrão precisa ter dado certo. Marque outro como padrão antes.";
     if (!selectedPrinter) return "Escolha a impressora.";
     if (!parsedUsages.length) return "Escolha ao menos um filamento.";
+    if (extraItemDrafts.some((row) => !row.extraItemId))
+      return "Escolha o item extra ou remova a linha.";
+    if (parsedExtraItems.some((u) => u.quantity < 1))
+      return "Informe quantos de cada item extra vão por peça.";
     if (isFailure) {
       if (!failureReason) return "Conte o que aconteceu.";
       if (durationToMinutes(failureTime) == null)
@@ -352,6 +389,7 @@ function RecordForm({
       printedAt: toIso(date),
       printer,
       filaments: recordUsages,
+      extraItems: parsedExtraItems,
       units: unitCount,
       totalMinutes: recordMinutes,
       settings: nextSettings,
@@ -502,6 +540,19 @@ function RecordForm({
             changed={changed.filament}
             showPrice={false}
             stacked
+          />
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <Label>
+            Itens extras
+            {changed.extraItems && <ChangedMark />}
+          </Label>
+          <ExtraItemUsageFields
+            value={extraItemDrafts}
+            onChange={setExtraItemDrafts}
+            items={extraItemOptions}
+            changed={changed.extraItems}
           />
         </div>
 
@@ -829,7 +880,7 @@ function RecordForm({
               {formatBRL(cost.total)}
             </span>
             <span className="tabular-nums">
-              {formatBRL(cost.total / unitCount)} / un.
+              {formatBRL(costPerUnit.total)} / un.
             </span>
             {firstUsage && (
               <span className="ml-auto inline-flex items-center gap-1.5 tabular-nums">
@@ -851,7 +902,7 @@ function RecordForm({
             {isFailure ? (
               "Falhas não entram nas médias do item."
             ) : isEditing ? (
-              "Os filamentos que já estavam mantêm o preço do dia."
+              "Filamentos e itens extras que já estavam mantêm o preço do dia."
             ) : (
               <>
                 O que mudou:{" "}
@@ -894,6 +945,7 @@ export function PrintRecordSheet({
   baseRecordId,
   editRecordId,
   filaments,
+  extraItems,
   costs,
   onSaved,
 }: {
@@ -905,6 +957,7 @@ export function PrintRecordSheet({
   /** Com ele, o painel edita esse registro em vez de criar um novo. */
   editRecordId?: string | null;
   filaments: PrintFilament[];
+  extraItems: PrintExtraItem[];
   costs: CostContext;
   /** photoError: o registro salvou, mas as fotos não foram enviadas. */
   onSaved: (item: PrintItem, photoError: string | null) => void;
@@ -939,6 +992,7 @@ export function PrintRecordSheet({
             base={base}
             isEditing={isEditing}
             filaments={filaments}
+            extraItems={extraItems}
             costs={costs}
             onChangeBase={setBaseOverride}
             onCancel={() => handleOpenChange(false)}

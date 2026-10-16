@@ -4,6 +4,7 @@
 
 import { ApiError, apiFetch } from "./client";
 import type { CostSettings } from "./cost-settings";
+import { getUnitCost, listExtraItems } from "./extra-item";
 import {
   Filament,
   SPOOL_LEVEL_LABELS,
@@ -47,6 +48,24 @@ export type PrintFilamentUsage = {
   usageId?: string;
 };
 
+// Ímã, argola, embalagem... com o custo unitário e o nome do dia do registro.
+export type PrintExtraItem = { id: string; name: string; unitCost: number };
+
+// Item extra excluído depois do registro: o id vira este marcador.
+const DELETED_EXTRA_ITEM_PREFIX = "excluido:";
+
+export function isDeletedExtraItem(item: Pick<PrintExtraItem, "id">) {
+  return item.id.startsWith(DELETED_EXTRA_ITEM_PREFIX);
+}
+
+export type PrintExtraItemUsage = {
+  extraItem: PrintExtraItem;
+  // Quantos vão em cada peça; o total multiplica pelas unidades.
+  quantity: number;
+  // Id do uso no registro salvo; na edição, mantém um item excluído.
+  usageId?: string;
+};
+
 // Ponto de foco (0 a 100%) que fica no centro do recorte, ou a foto inteira.
 export type PhotoFraming = { focusX: number; focusY: number; contain: boolean };
 
@@ -69,6 +88,7 @@ export type PrintRecord = {
   printedAt: string;
   printer: PrintPrinter;
   filaments: PrintFilamentUsage[];
+  extraItems: PrintExtraItemUsage[];
   units: number;
   // Tempo da impressão inteira (todas as unidades). Na falha, até parar.
   totalMinutes: number;
@@ -98,8 +118,12 @@ export type PrintItem = {
   records: PrintRecord[];
 };
 
-// O que as telas montam; vira o corpo da requisição em toRecordPayload.
-export type PrintRecordInput = Omit<PrintRecord, "id" | "photos">;
+// O que as telas montam; vira o corpo da requisição em toRecordPayload. Sem
+// extraItems (a fila), o registro novo fica sem e o editado mantém os dele.
+export type PrintRecordInput = Omit<
+  PrintRecord,
+  "id" | "photos" | "extraItems"
+> & { extraItems?: PrintExtraItemUsage[] };
 
 export type PrintItemInput = {
   name: string;
@@ -148,8 +172,18 @@ export type PrintFilamentUsageResponse = {
   };
 };
 
-type PrintRecordResponse = Omit<PrintRecord, "filaments" | "photos"> & {
+type PrintExtraItemUsageResponse = {
+  id: string;
+  quantity: number;
+  extraItem: Omit<PrintExtraItem, "id"> & { id: string | null };
+};
+
+type PrintRecordResponse = Omit<
+  PrintRecord,
+  "filaments" | "extraItems" | "photos"
+> & {
   filaments: PrintFilamentUsageResponse[];
+  extraItems: PrintExtraItemUsageResponse[];
   photos: ({ id: string; url: string } & PhotoFraming)[];
 };
 
@@ -182,6 +216,14 @@ function fromRecordResponse(record: PrintRecordResponse): PrintRecord {
   return {
     ...record,
     filaments: record.filaments.map(fromUsageResponse),
+    extraItems: record.extraItems.map((usage) => ({
+      usageId: usage.id,
+      quantity: usage.quantity,
+      extraItem: {
+        ...usage.extraItem,
+        id: usage.extraItem.id ?? `${DELETED_EXTRA_ITEM_PREFIX}${usage.id}`,
+      },
+    })),
     photos: record.photos.map(({ url, ...photo }) => ({
       ...photo,
       src: printPhotoSrc(url),
@@ -213,6 +255,17 @@ export function toRecordPayload(input: PrintRecordInput) {
           }
         : { filamentId: usage.filament.id }),
       grams: Math.round(usage.grams * 100) / 100,
+    })),
+    // Item extra excluído também só fica pelo uso que o registro já tinha.
+    extraItems: input.extraItems?.map((usage) => ({
+      ...(isDeletedExtraItem(usage.extraItem)
+        ? {
+            usageId:
+              usage.usageId ??
+              usage.extraItem.id.slice(DELETED_EXTRA_ITEM_PREFIX.length),
+          }
+        : { extraItemId: usage.extraItem.id }),
+      quantity: usage.quantity,
     })),
     units: input.units,
     totalMinutes: Math.round(input.totalMinutes),
@@ -422,6 +475,16 @@ export async function listPrintFilaments() {
     );
 }
 
+// Custo unitário de hoje: o do lote mais recente.
+export async function listPrintExtraItems(): Promise<PrintExtraItem[]> {
+  const items = await listExtraItems();
+  return items.map((item) => ({
+    id: item.id,
+    name: item.name,
+    unitCost: getUnitCost(item),
+  }));
+}
+
 export function describeSpoolLevel(filament: PrintFilament) {
   return SPOOL_LEVEL_LABELS[filament.spoolLevel];
 }
@@ -438,6 +501,7 @@ export type CostBreakdown = {
   filament: number;
   energy: number;
   maintenance: number;
+  extraItems: number;
   packaging: number;
   other: number;
   failureReserve: number;
@@ -447,7 +511,11 @@ export type CostBreakdown = {
 type CostInput = Pick<
   PrintRecord,
   "filaments" | "totalMinutes" | "units" | "outcome"
-> & { printer: Pick<PrintPrinter, "id"> };
+> & {
+  printer: Pick<PrintPrinter, "id">;
+  // A fila ainda não tem itens extras.
+  extraItems?: PrintExtraItemUsage[];
+};
 
 export function getRecordGrams(record: Pick<PrintRecord, "filaments">) {
   return record.filaments.reduce((sum, usage) => sum + usage.grams, 0);
@@ -466,10 +534,53 @@ export function getMissingPrinterCosts(printer: Printer | null) {
   return missing;
 }
 
+/**
+ * Valores de custo sempre sobem para o centavo seguinte. A folga desconta o
+ * ruído do ponto flutuante (12,34 × 100 = 1233,9999…), que senão viraria um
+ * centavo a mais.
+ */
+export function ceilCents(value: number) {
+  // "+ 0" troca o -0 (de zero menos a folga) por 0, senão aparece "-R$ 0,00".
+  return Math.ceil(value * 100 - 1e-6) / 100 + 0;
+}
+
+// Cada parte sobe para o centavo e o total é a soma das partes já
+// arredondadas, para bater com o detalhamento na tela.
+function ceilBreakdown(cost: CostBreakdown): CostBreakdown {
+  const rounded = Object.fromEntries(
+    Object.entries(cost)
+      .filter(([key]) => key !== "total")
+      .map(([key, value]) => [key, ceilCents(value)]),
+  ) as Omit<CostBreakdown, "total">;
+  const total = Object.values(rounded).reduce((sum, value) => sum + value, 0);
+  return { ...rounded, total: Math.round(total * 100) / 100 };
+}
+
+function divideBreakdown(cost: CostBreakdown, units: number): CostBreakdown {
+  const n = Math.max(1, units);
+  return Object.fromEntries(
+    Object.entries(cost).map(([key, value]) => [key, value / n]),
+  ) as CostBreakdown;
+}
+
 export function computeCost(
   record: CostInput,
   ctx: CostContext,
 ): CostBreakdown {
+  return ceilBreakdown(computeExactCost(record, ctx));
+}
+
+// Divide antes de arredondar: o custo por unidade sobe uma vez só.
+export function computeCostPerUnit(
+  record: CostInput,
+  ctx: CostContext,
+): CostBreakdown {
+  return ceilBreakdown(
+    divideBreakdown(computeExactCost(record, ctx), record.units),
+  );
+}
+
+function computeExactCost(record: CostInput, ctx: CostContext): CostBreakdown {
   const hours = record.totalMinutes / 60;
   const printer = findCostPrinter(ctx, record.printer.id);
   // Tarifa própria da impressora; sem ela, a global.
@@ -483,13 +594,15 @@ export function computeCost(
   const maintenance = hours * (printer?.maintenanceCostPerHour ?? 0);
   const production = filament + energy + maintenance;
 
-  // Na falha conta só o que foi gasto até parar: embalagem e custos fixos
-  // são das peças que saem, e a reserva existe justamente para cobrir isso.
+  // Na falha conta só o que foi gasto até parar: itens extras, embalagem e
+  // custos fixos são das peças que saem, e a reserva existe justamente para
+  // cobrir isso.
   if (record.outcome === "FAILURE") {
     return {
       filament,
       energy,
       maintenance,
+      extraItems: 0,
       packaging: 0,
       other: 0,
       failureReserve: 0,
@@ -498,6 +611,7 @@ export function computeCost(
   }
 
   const units = Math.max(1, record.units);
+  const extraItems = getExtraItemsCostPerUnit(record.extraItems ?? []) * units;
   const packaging = ctx.settings.packagingCost * units;
   const other = ctx.settings.otherFixedCost * units;
   const failureReserve =
@@ -506,18 +620,19 @@ export function computeCost(
     filament,
     energy,
     maintenance,
+    extraItems,
     packaging,
     other,
     failureReserve,
-    total: production + packaging + other + failureReserve,
+    total: production + extraItems + packaging + other + failureReserve,
   };
 }
 
-export function divideCost(cost: CostBreakdown, units: number): CostBreakdown {
-  const n = Math.max(1, units);
-  return Object.fromEntries(
-    Object.entries(cost).map(([key, value]) => [key, value / n]),
-  ) as CostBreakdown;
+export function getExtraItemsCostPerUnit(usages: PrintExtraItemUsage[]) {
+  return usages.reduce(
+    (sum, usage) => sum + usage.quantity * usage.extraItem.unitCost,
+    0,
+  );
 }
 
 /** Linhas do detalhamento do custo, sem as que deram zero por não se aplicarem. */
@@ -526,6 +641,7 @@ export function costRows(cost: CostBreakdown, ctx: CostContext) {
     ["Filamento", cost.filament],
     ["Energia", cost.energy],
     ["Manutenção", cost.maintenance],
+    ["Itens extras", cost.extraItems],
     ["Embalagem", cost.packaging],
     ["Outros", cost.other],
     [
@@ -551,15 +667,15 @@ export function getDefaultRecord(item: PrintItem) {
 
 export function getPerUnit(record: PrintRecord, ctx: CostContext) {
   const units = Math.max(1, record.units);
-  const cost = computeCost(record, ctx);
+  const cost = computeCostPerUnit(record, ctx);
   return {
     grams: getRecordGrams(record) / units,
     minutes: record.totalMinutes / units,
     // Filamento à parte; "outros" é todo o resto (energia, manutenção,
-    // embalagem, fixos e reserva).
-    filamentCost: cost.filament / units,
-    otherCost: (cost.total - cost.filament) / units,
-    cost: cost.total / units,
+    // itens extras, embalagem, fixos e reserva).
+    filamentCost: cost.filament,
+    otherCost: Math.round((cost.total - cost.filament) * 100) / 100,
+    cost: cost.total,
   };
 }
 
@@ -586,7 +702,7 @@ export function getWorstCasePerUnit(
       return { ...usage, filament: { ...usage.filament, pricePerGram } };
     }),
   };
-  return computeCost(worst, ctx).total / Math.max(1, record.units);
+  return computeCostPerUnit(worst, ctx).total;
 }
 
 export type PrintItemStats = {
@@ -621,7 +737,8 @@ export function getItemStats(item: PrintItem): PrintItemStats {
 // O que mudou em relação ao registro de base, em texto curto.
 export function describeChanges(
   base: PrintRecord,
-  next: Pick<PrintRecord, "printer" | "filaments" | "units" | "settings">,
+  next: Pick<PrintRecord, "printer" | "filaments" | "units" | "settings"> &
+    Partial<Pick<PrintRecord, "extraItems">>,
 ) {
   const parts: string[] = [];
   const baseIds = base.filaments.map((u) => u.filament.id).join();
@@ -630,6 +747,17 @@ export function describeChanges(
     parts.push(
       next.filaments.map((u) => describePrintFilament(u.filament)).join(" + "),
     );
+  }
+  if (next.extraItems) {
+    const key = (usages: PrintExtraItemUsage[]) =>
+      usages.map((u) => `${u.extraItem.id}:${u.quantity}`).join();
+    if (key(base.extraItems) !== key(next.extraItems)) {
+      parts.push(
+        next.extraItems.length
+          ? next.extraItems.map(describeExtraItemUsage).join(" + ")
+          : "sem itens extras",
+      );
+    }
   }
   if (base.printer.id !== next.printer.id) parts.push(next.printer.name);
   if (base.units !== next.units) parts.push(`${next.units} un.`);
@@ -671,6 +799,10 @@ export function describeChanges(
 
 export function describePrintFilament(f: PrintFilament) {
   return `${f.type} ${f.colorName}`;
+}
+
+export function describeExtraItemUsage(usage: PrintExtraItemUsage) {
+  return `${usage.quantity}× ${usage.extraItem.name}`;
 }
 
 export function formatDecimal(value: number, maxDigits = 2) {

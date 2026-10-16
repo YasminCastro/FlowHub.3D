@@ -1,6 +1,13 @@
 import { apiFetch, setAccessToken } from "./client";
 
-export { ApiError, getAccessToken, setAccessToken, decodeAccessToken } from "./client";
+export {
+  ApiError,
+  getAccessToken,
+  setAccessToken,
+  decodeAccessToken,
+  onAccessTokenChange,
+  refreshAccessToken,
+} from "./client";
 
 export async function signup(email: string, password: string, name?: string) {
   return (await apiFetch("/auth/signup", {
@@ -60,28 +67,6 @@ export async function changePassword(
     method: "POST",
     body: JSON.stringify({ currentPassword, newPassword }),
   })) as { message: string };
-}
-
-export async function refreshAccessToken() {
-  let res: Response;
-  try {
-    res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/refresh`, {
-      method: "POST",
-      credentials: "include",
-    });
-  } catch {
-    setAccessToken(null);
-    return null;
-  }
-
-  if (!res.ok) {
-    setAccessToken(null);
-    return null;
-  }
-
-  const data = (await res.json()) as { accessToken: string };
-  setAccessToken(data.accessToken);
-  return data.accessToken;
 }
 
 export async function logout() {

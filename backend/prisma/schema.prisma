@@ -12,35 +12,33 @@ datasource db {
   provider = "postgresql"
 }
 
-
 model User {
-  id                  String   @id @default(uuid())
-  email               String   @unique
-  name                String?
-  password            String
-  hashedRefreshToken  String?
-  isEmailVerified     Boolean @default(false)
-  verificationCode    String?
-  verificationCodeExpiresAt DateTime?
-  passwordResetCode   String?
+  id                         String    @id @default(uuid())
+  email                      String    @unique
+  name                       String?
+  password                   String
+  hashedRefreshToken         String?
+  isEmailVerified            Boolean   @default(false)
+  verificationCode           String?
+  verificationCodeExpiresAt  DateTime?
+  passwordResetCode          String?
   passwordResetCodeExpiresAt DateTime?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
 
-  categories Category[]
-  printers Printer[]
-  brands Brand[]
-  filaments Filament[]
-  extraItems ExtraItem[]
-  journalEntries JournalEntry[]
-  costSettings CostSettings?
-  printItems PrintItem[]
+  categories        Category[]
+  printers          Printer[]
+  brands            Brand[]
+  filaments         Filament[]
+  extraItems        ExtraItem[]
+  journalEntries    JournalEntry[]
+  costSettings      CostSettings?
+  printItems        PrintItem[]
   printQueueEntries PrintQueueEntry[]
-  catalogItems CatalogItem[]
-  calibrations Calibration[]
+  catalogItems      CatalogItem[]
+  calibrations      Calibration[]
   calibrationGuides CalibrationGuideProgress[]
 }
-
 
 model Category {
   id        String   @id @default(uuid())
@@ -51,35 +49,35 @@ model Category {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  printItems PrintItem[]
+  printItems   PrintItem[]
   catalogItems CatalogItem[]
 
   @@unique([userId, name])
 }
 
 model Printer {
-  id        String   @id @default(uuid())
-  name      String
-  brand     String
-  nozzle    String?
-  extrusionType String?  
-  filamentsTypes  String[]  @default([])
+  id                     String    @id @default(uuid())
+  name                   String
+  brand                  String
+  nozzle                 String?
+  extrusionType          String?
+  filamentsTypes         String[]  @default([])
   powerConsumptionW      Float?
   energyCostPerKwh       Float?
   maintenanceCostPerHour Float?
   purchasePrice          Float?
   purchaseDate           DateTime?
-  lastMaintenanceDate       DateTime?
-  notes                 String?
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  lastMaintenanceDate    DateTime?
+  notes                  String?
+  userId                 String
+  user                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
-  maintenances PrinterMaintenance[]
-  printRecords PrintRecord[]
+  maintenances      PrinterMaintenance[]
+  printRecords      PrintRecord[]
   printQueueEntries PrintQueueEntry[]
-  calibrations Calibration[]
+  calibrations      Calibration[]
   calibrationGuides CalibrationGuideProgress[]
 
   @@unique([userId, name])
@@ -93,19 +91,19 @@ enum MaintenanceType {
 }
 
 model PrinterMaintenance {
-  id                String          @id @default(uuid())
-  type              MaintenanceType
-  date              DateTime
-  printerHours      Float?
-  cost              Float?
-  description       String?
-  remindAfterHours  Float?
-  nozzleInstalled   String?
-  nozzleRemoved     String?
-  printerId         String
-  printer           Printer         @relation(fields: [printerId], references: [id], onDelete: Cascade)
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  id               String          @id @default(uuid())
+  type             MaintenanceType
+  date             DateTime
+  printerHours     Float?
+  cost             Float?
+  description      String?
+  remindAfterHours Float?
+  nozzleInstalled  String?
+  nozzleRemoved    String?
+  printerId        String
+  printer          Printer         @relation(fields: [printerId], references: [id], onDelete: Cascade)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   @@index([printerId, date])
 }
@@ -144,7 +142,7 @@ model Brand {
   createdAt               DateTime          @default(now())
   updatedAt               DateTime          @updatedAt
 
-  notes BrandNote[]
+  notes     BrandNote[]
   filaments Filament[]
 
   @@unique([userId, name])
@@ -176,45 +174,45 @@ enum SpoolLevel {
 
 // Um filamento é o produto (marca + tipo + cor), comprado uma ou mais vezes.
 model Filament {
-  id                String               @id @default(uuid())
-  type              String
-  colorName         String
+  id               String               @id @default(uuid())
+  type             String
+  colorName        String
   // De 1 a 3 cores em hex (#rrggbb), na ordem: rolos duo e tri color têm
   // mais de uma. A amostra mostra um degradê entre elas.
-  colors            String[]
-  spoolWeightGrams  Int
+  colors           String[]
+  spoolWeightGrams Int
   // Preço pago pelo rolo inteiro (não por kg), menor e maior entre as compras.
-  minPricePaid      Float
-  maxPricePaid      Float?
-  purchaseCount     Int                  @default(1)
-  lastPurchasedAt   DateTime?
-  purchaseChannel   PurchaseChannel?
-  availability      FilamentAvailability @default(AVAILABLE)
+  minPricePaid     Float
+  maxPricePaid     Float?
+  purchaseCount    Int                  @default(1)
+  lastPurchasedAt  DateTime?
+  purchaseChannel  PurchaseChannel?
+  availability     FilamentAvailability @default(AVAILABLE)
   // Comprado no outlet: em geral troca de cor, um rolo bem específico.
-  isOutlet          Boolean              @default(false)
-  spoolLevel        SpoolLevel           @default(FULL)
+  isOutlet         Boolean              @default(false)
+  spoolLevel       SpoolLevel           @default(FULL)
   // Quando o carretel foi marcado como FINISHED; null nos outros níveis.
-  finishedAt        DateTime?
-  rating            Int?
-  ratingComment     String?
+  finishedAt       DateTime?
+  rating           Int?
+  ratingComment    String?
   // Configurações do fabricante (°C): faixa recomendada do bico e da mesa.
-  nozzleTempMin     Int?
-  nozzleTempMax     Int?
-  bedTempMin        Int?
-  bedTempMax        Int?
+  nozzleTempMin    Int?
+  nozzleTempMax    Int?
+  bedTempMin       Int?
+  bedTempMax       Int?
   // Restrict: uma marca com filamentos não pode ser excluída, só arquivada.
-  brandId           String
-  brand             Brand                @relation(fields: [brandId], references: [id], onDelete: Restrict)
-  userId            String
-  user              User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
+  brandId          String
+  brand            Brand                @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  userId           String
+  user             User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
 
-  notes FilamentNote[]
-  journalEntries JournalEntry[]
-  printUsages PrintRecordFilament[]
-  queueUsages PrintQueueFilament[]
-  calibrations Calibration[]
+  notes             FilamentNote[]
+  journalEntries    JournalEntry[]
+  printUsages       PrintRecordFilament[]
+  queueUsages       PrintQueueFilament[]
+  calibrations      Calibration[]
   calibrationGuides CalibrationGuideProgress[]
 
   @@unique([userId, brandId, type, colorName])
@@ -243,7 +241,8 @@ model ExtraItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  lots ExtraItemLot[]
+  lots         ExtraItemLot[]
+  printRecords PrintRecordExtraItem[]
 
   @@unique([userId, name])
 }
@@ -369,8 +368,8 @@ model PrintItem {
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
-  records PrintRecord[]
-  queueEntries PrintQueueEntry[]
+  records         PrintRecord[]
+  queueEntries    PrintQueueEntry[]
   catalogVariants CatalogVariant[]
 
   @@unique([userId, name])
@@ -411,8 +410,9 @@ model PrintRecord {
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
-  filaments PrintRecordFilament[]
-  photos    PrintPhoto[]
+  filaments  PrintRecordFilament[]
+  extraItems PrintRecordExtraItem[]
+  photos     PrintPhoto[]
 
   @@index([itemId, printedAt])
   @@index([printerId])
@@ -439,6 +439,24 @@ model PrintRecordFilament {
   @@index([filamentId])
 }
 
+// Item extra usado num registro (ímã, argola...), com a quantidade por peça.
+// Guarda o custo unitário e o nome do dia, como em PrintRecordFilament: um
+// lote novo ou a exclusão do item não muda o custo de uma impressão antiga.
+model PrintRecordExtraItem {
+  id          String      @id @default(uuid())
+  position    Int
+  quantity    Int
+  unitCost    Float
+  name        String
+  extraItemId String?
+  extraItem   ExtraItem?  @relation(fields: [extraItemId], references: [id], onDelete: SetNull)
+  recordId    String
+  record      PrintRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  @@index([recordId, position])
+  @@index([extraItemId])
+}
+
 model PrintPhoto {
   id        String      @id @default(uuid())
   filename  String      @unique
@@ -460,7 +478,7 @@ model PrintPhoto {
 // Concluído com sucesso, sai da fila (completedAt) e vira um registro em
 // Impressões; se falha, continua na fila marcado com a última falha.
 model PrintQueueEntry {
-  id                String             @id @default(uuid())
+  id                String     @id @default(uuid())
   name              String
   // Ordem entre os pendentes (0 = o próximo). Nos concluídos não importa.
   position          Int
@@ -472,21 +490,21 @@ model PrintQueueEntry {
   // A impressão ligada: a escolhida ao adicionar ou onde foi registrada ao
   // concluir. SetNull: excluir a impressão não apaga o item da fila.
   printItemId       String?
-  printItem         PrintItem?         @relation(fields: [printItemId], references: [id], onDelete: SetNull)
+  printItem         PrintItem? @relation(fields: [printItemId], references: [id], onDelete: SetNull)
   // SetNull: excluir a impressora não apaga o item; o nome fica.
   printerId         String?
-  printer           Printer?           @relation(fields: [printerId], references: [id], onDelete: SetNull)
+  printer           Printer?   @relation(fields: [printerId], references: [id], onDelete: SetNull)
   printerName       String
   lastFailureAt     DateTime?
   lastFailureReason String?
   completedAt       DateTime?
   // Concluído criando uma impressão nova (em vez de um registro numa que já
   // existia).
-  createdItem       Boolean            @default(false)
+  createdItem       Boolean    @default(false)
   userId            String
-  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  user              User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
 
   filaments PrintQueueFilament[]
 
