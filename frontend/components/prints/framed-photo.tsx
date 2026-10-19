@@ -1,8 +1,9 @@
 "use client";
 
-import { Crop, Maximize, Move } from "lucide-react";
-import { useRef, useState } from "react";
+import { Crop, ImageOff, Maximize, Move } from "lucide-react";
+import { RefObject, useEffect, useRef, useState } from "react";
 
+import { PhotoPlaceholder } from "@/components/prints/print-bits";
 import { Button } from "@/components/ui/button";
 import { PhotoFraming, PrintPhoto } from "@/lib/api/print";
 import { cn } from "@/lib/utils";
@@ -13,6 +14,37 @@ function framingClass(framing: PhotoFraming) {
 
 function framingStyle(framing: PhotoFraming) {
   return { objectPosition: `${framing.focusX}% ${framing.focusY}%` };
+}
+
+// Diz se a foto falhou ao carregar. A foto pode falhar antes da hidratação,
+// quando o onError ainda não existe, então confere também ao montar.
+function usePhotoFailed(src: string, imgRef: RefObject<HTMLImageElement | null>) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    const img = imgRef.current;
+    if (img?.complete && !img.naturalWidth) setFailedSrc(src);
+  }, [src, imgRef]);
+
+  return {
+    failed: failedSrc === src,
+    onError: () => setFailedSrc(src),
+  };
+}
+
+// No lugar de uma foto que existe mas não carregou.
+function BrokenPhoto({ className }: { className?: string }) {
+  return (
+    <PhotoPlaceholder className={cn("text-foreground/40", className)}>
+      <span
+        role="img"
+        aria-label="Não foi possível carregar a foto"
+        title="Não foi possível carregar a foto"
+      >
+        <ImageOff className="size-6" aria-hidden="true" />
+      </span>
+    </PhotoPlaceholder>
+  );
 }
 
 // Foto de impressão com o enquadramento salvo: recorta em volta do ponto de
@@ -26,10 +58,17 @@ export function FramedPhoto({
   alt?: string;
   className?: string;
 }) {
+  const imgRef = useRef<HTMLImageElement>(null);
+  const { failed, onError } = usePhotoFailed(photo.src, imgRef);
+
+  if (failed) return <BrokenPhoto className={className} />;
+
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
+      ref={imgRef}
       src={photo.src}
+      onError={onError}
       alt={alt}
       className={cn(className, framingClass(photo))}
       style={framingStyle(photo)}
@@ -62,6 +101,9 @@ export function PhotoFramer({
   const [draft, setDraft] = useState<PhotoFraming | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const framing = draft ?? photo;
+  const { failed, onError } = usePhotoFailed(photo.src, imgRef);
+
+  if (failed) return <BrokenPhoto className={className} />;
 
   function startEditing() {
     setDraft({
@@ -139,6 +181,7 @@ export function PhotoFramer({
         ref={imgRef}
         src={photo.src}
         alt={alt ?? ""}
+        onError={onError}
         draggable={false}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
