@@ -26,6 +26,7 @@ import { PrintCard } from "@/components/prints/print-card";
 import { Stat, StatDivider } from "@/components/prints/print-bits";
 import { usePageHeaderAction } from "@/contexts/page-header-action-context";
 import { useCostContext } from "@/hooks/use-cost-context";
+import { useStoredState } from "@/hooks/use-stored-state";
 import { ApiError } from "@/lib/api/auth";
 import {
   PrintItem,
@@ -108,10 +109,24 @@ export default function PrintsPage() {
   const { costs, loadError: costsError } = useCostContext();
   const loadError = itemsError ?? costsError;
   const isLoading = isLoadingItems || (!costs && !loadError);
-  const [search, setSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState(ALL_CATEGORIES);
-  const [onlyRecentFailure, setOnlyRecentFailure] = useState(false);
-  const [sort, setSort] = useState<SortOption>("recent");
+  // Os filtros ficam salvos no navegador: voltam iguais ao atualizar a página.
+  const [search, setSearch] = useStoredState("impressoes:search", "");
+  const [storedCategory, setCategoryFilter] = useStoredState(
+    "impressoes:category",
+    ALL_CATEGORIES,
+  );
+  const [onlyRecentFailure, setOnlyRecentFailure] = useStoredState(
+    "impressoes:recentFailure",
+    false,
+  );
+  const [storedSort, setSort] = useStoredState<SortOption>(
+    "impressoes:sort",
+    "recent",
+  );
+  // Valor salvo que deixou de valer (opção removida) volta ao padrão.
+  const sort = SORT_OPTIONS.some((option) => option.value === storedSort)
+    ? storedSort
+    : "recent";
 
   useEffect(() => {
     let ignore = false;
@@ -154,6 +169,11 @@ export default function PrintsPage() {
       ),
     ).values(),
   ].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  // Categoria salva que não tem mais peças (ou foi excluída) mostra todas.
+  const categoryFilter =
+    isLoadingItems || categories.some((c) => c.id === storedCategory)
+      ? storedCategory
+      : ALL_CATEGORIES;
 
   const query = search.trim().toLowerCase();
   const visibleItems = items

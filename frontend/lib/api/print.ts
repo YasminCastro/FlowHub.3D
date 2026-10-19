@@ -496,13 +496,13 @@ export function describeSpoolLevel(filament: PrintFilament) {
 // energia" e as impressoras (consumo, tarifa própria e manutenção).
 export type CostContext = { settings: CostSettings; printers: Printer[] };
 
-// Mão de obra e margem não entram: vão para o preço sugerido, no Catálogo.
+// Mão de obra, embalagem e margem não entram: são da venda e vão para o
+// preço sugerido, no Catálogo.
 export type CostBreakdown = {
   filament: number;
   energy: number;
   maintenance: number;
   extraItems: number;
-  packaging: number;
   other: number;
   failureReserve: number;
   total: number;
@@ -594,16 +594,14 @@ function computeExactCost(record: CostInput, ctx: CostContext): CostBreakdown {
   const maintenance = hours * (printer?.maintenanceCostPerHour ?? 0);
   const production = filament + energy + maintenance;
 
-  // Na falha conta só o que foi gasto até parar: itens extras, embalagem e
-  // custos fixos são das peças que saem, e a reserva existe justamente para
-  // cobrir isso.
+  // Na falha conta só o que foi gasto até parar: itens extras e custos fixos
+  // são das peças que saem, e a reserva existe justamente para cobrir isso.
   if (record.outcome === "FAILURE") {
     return {
       filament,
       energy,
       maintenance,
       extraItems: 0,
-      packaging: 0,
       other: 0,
       failureReserve: 0,
       total: production,
@@ -612,7 +610,6 @@ function computeExactCost(record: CostInput, ctx: CostContext): CostBreakdown {
 
   const units = Math.max(1, record.units);
   const extraItems = getExtraItemsCostPerUnit(record.extraItems ?? []) * units;
-  const packaging = ctx.settings.packagingCost * units;
   const other = ctx.settings.otherFixedCost * units;
   const failureReserve =
     (production * ctx.settings.failureReservePercent) / 100;
@@ -621,10 +618,9 @@ function computeExactCost(record: CostInput, ctx: CostContext): CostBreakdown {
     energy,
     maintenance,
     extraItems,
-    packaging,
     other,
     failureReserve,
-    total: production + extraItems + packaging + other + failureReserve,
+    total: production + extraItems + other + failureReserve,
   };
 }
 
@@ -642,7 +638,6 @@ export function costRows(cost: CostBreakdown, ctx: CostContext) {
     ["Energia", cost.energy],
     ["Manutenção", cost.maintenance],
     ["Itens extras", cost.extraItems],
-    ["Embalagem", cost.packaging],
     ["Outros", cost.other],
     [
       `Reserva p/ falhas (${formatDecimal(ctx.settings.failureReservePercent)}%)`,
@@ -672,7 +667,7 @@ export function getPerUnit(record: PrintRecord, ctx: CostContext) {
     grams: getRecordGrams(record) / units,
     minutes: record.totalMinutes / units,
     // Filamento à parte; "outros" é todo o resto (energia, manutenção,
-    // itens extras, embalagem, fixos e reserva).
+    // itens extras, fixos e reserva).
     filamentCost: cost.filament,
     otherCost: Math.round((cost.total - cost.filament) * 100) / 100,
     cost: cost.total,
@@ -690,6 +685,15 @@ export function getWorstCasePerUnit(
   inStock: PrintFilament[],
   ctx: CostContext,
 ) {
+  return getWorstCaseBreakdownPerUnit(record, inStock, ctx).total;
+}
+
+/** O mesmo pior cenário, parte por parte (o Catálogo mostra o detalhamento). */
+export function getWorstCaseBreakdownPerUnit(
+  record: PrintRecord,
+  inStock: PrintFilament[],
+  ctx: CostContext,
+) {
   const worst: PrintRecord = {
     ...record,
     filaments: record.filaments.map((usage) => {
@@ -702,7 +706,7 @@ export function getWorstCasePerUnit(
       return { ...usage, filament: { ...usage.filament, pricePerGram } };
     }),
   };
-  return computeCostPerUnit(worst, ctx).total;
+  return computeCostPerUnit(worst, ctx);
 }
 
 export type PrintItemStats = {

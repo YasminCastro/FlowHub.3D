@@ -109,7 +109,11 @@ export class AuthController {
   private setRefreshCookie(res: Response, token: string) {
     res.cookie(REFRESH_COOKIE, token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      // Sem HTTPS (ex.: servidor na rede local) o navegador descarta cookies
+      // `secure`; COOKIE_SECURE=false permite rodar em produção via http.
+      secure: process.env.COOKIE_SECURE
+        ? process.env.COOKIE_SECURE === 'true'
+        : process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       maxAge: REFRESH_COOKIE_MAX_AGE,
     });

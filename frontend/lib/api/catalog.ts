@@ -9,13 +9,17 @@ import { ApiError, apiFetch } from "./client";
 import type { Category } from "./category";
 import { Filament, getMaterial, isInStock } from "./filament";
 import {
+  CostBreakdown,
   CostContext,
   PrintItem,
   PrintPhoto,
   PrintRecord,
   getDefaultRecord,
+  ceilCents,
+  costRows,
+  formatDecimal,
   getPerUnit,
-  getWorstCasePerUnit,
+  getWorstCaseBreakdownPerUnit,
   toPrintFilament,
 } from "./print";
 
@@ -145,11 +149,16 @@ function withCurrentFilamentPrices(
   };
 }
 
+function withMargin(value: number, ctx: CostContext) {
+  return value * (1 + ctx.settings.defaultMarginPercent / 100);
+}
+
 /**
- * Preço sugerido de uma unidade: custo do registro padrão no pior cenário
- * (cada filamento trocado pelo rolo mais caro em estoque do material, já que
- * o cliente pode escolher qualquer cor) mais a mão de obra do preparo, com a
- * margem padrão por cima.
+ * Preço sugerido de uma unidade vendida: custo do registro padrão no pior
+ * cenário (cada filamento trocado pelo rolo mais caro em estoque do material,
+ * já que o cliente pode escolher qualquer cor) mais a embalagem e a mão de
+ * obra do preparo, com a margem padrão por cima. A embalagem só entra aqui:
+ * é da venda, não da impressão.
  */
 export function suggestPrice(
   print: PrintItem,
@@ -160,13 +169,55 @@ export function suggestPrice(
   if (!record) return null;
   const current = withCurrentFilamentPrices(record, filaments);
   const inStock = filaments.filter(isInStock).map(toPrintFilament);
-  const cost = getWorstCasePerUnit(current, inStock, ctx);
-  const labor =
-    (ctx.settings.prepMinutesPerPiece / 60) * ctx.settings.laborCostPerHour;
+  const printCost = getWorstCaseBreakdownPerUnit(current, inStock, ctx);
+  const packaging = ceilCents(ctx.settings.packagingCost);
+  const cost = ceilCents(printCost.total + packaging);
+  const labor = ceilCents(
+    (ctx.settings.prepMinutesPerPiece / 60) * ctx.settings.laborCostPerHour,
+  );
+  const calculated = ceilCents(withMargin(cost + labor, ctx));
+  const pricing: VariantPricing = {
+    print: printCost,
+    packaging,
+    cost,
+    labor,
+    // O que sobra até o calculado: as linhas do detalhamento somam certinho.
+    margin: ceilCents(calculated - cost - labor),
+    calculated,
+  };
   return {
     grams: getPerUnit(current, ctx).grams,
     cost,
-    price: (cost + labor) * (1 + ctx.settings.defaultMarginPercent / 100),
+    price: calculated,
+    packagingPrice: withMargin(packaging, ctx),
+    pricing,
+  };
+}
+
+// Do custo da impressão ao calculado, parte por parte (por unidade).
+export type VariantPricing = {
+  // Pior cenário de filamento, como em getWorstCasePerUnit.
+  print: CostBreakdown;
+  packaging: number;
+  // Impressão + embalagem.
+  cost: number;
+  labor: number;
+  margin: number;
+  calculated: number;
+};
+
+/** Linhas do detalhamento do preço calculado, na ordem em que somam. */
+export function pricingRows(pricing: VariantPricing, ctx: CostContext) {
+  return {
+    print: costRows(pricing.print, ctx),
+    sale: [
+      ["Embalagem", pricing.packaging],
+      ["Mão de obra", pricing.labor],
+      [
+        `Margem (${formatDecimal(ctx.settings.defaultMarginPercent)}%)`,
+        pricing.margin,
+      ],
+    ] as [string, number][],
   };
 }
 
@@ -174,8 +225,13 @@ export type ResolvedVariant = CatalogVariant & {
   // null: a impressão foi excluída.
   print: PrintItem | null;
   grams: number | null;
+  // Custo de vender uma unidade: a impressão mais a embalagem.
   cost: number | null;
   calculated: number | null;
+  // Parte do calculado que é da embalagem (com margem); o kit desconta das
+  // peças e cobra uma vez só.
+  packagingPrice: number | null;
+  pricing: VariantPricing | null;
   // O que vale: o manual ou, sem ele, o calculado.
   price: number | null;
 };
@@ -216,6 +272,8 @@ export function resolveVariant(
     grams: suggestion?.grams ?? null,
     cost: suggestion?.cost ?? null,
     calculated: suggestion?.price ?? null,
+    packagingPrice: suggestion?.packagingPrice ?? null,
+    pricing: suggestion?.pricing ?? null,
     price: variant.priceOverride ?? suggestion?.price ?? null,
   };
 }
@@ -291,10 +349,17 @@ export function resolveCatalogItem(
   };
 }
 
-/** Kit: o preço calculado é a soma das peças. */
+/**
+ * Kit: o preço calculado é a soma das peças, com uma embalagem só (o kit sai
+ * numa embalagem, não uma por peça).
+ */
 export function getKitCalculated(variants: ResolvedVariant[]) {
   if (variants.some((v) => v.calculated == null)) return null;
-  return variants.reduce((sum, v) => sum + (v.calculated ?? 0), 0);
+  const pieces = variants.reduce(
+    (sum, v) => sum + (v.calculated ?? 0) - (v.packagingPrice ?? 0),
+    0,
+  );
+  return pieces + (variants[0]?.packagingPrice ?? 0);
 }
 
 // ---------------------------------------------------------------------------

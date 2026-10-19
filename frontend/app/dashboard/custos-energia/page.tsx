@@ -65,10 +65,11 @@ const LABOR_FIELDS: FieldSpec[] = [
     suffix: "%",
     decimals: 0,
   },
+  // A embalagem é da venda, não da impressão: entra só no Catálogo.
+  { key: "packagingCost", label: "Embalagem", prefix: "R$", decimals: 2 },
 ];
 
 const FIXED_COST_FIELDS: FieldSpec[] = [
-  { key: "packagingCost", label: "Embalagem", prefix: "R$", decimals: 2 },
   {
     key: "failureReservePercent",
     label: "Reserva para falhas",
@@ -579,7 +580,7 @@ export default function CostsAndEnergyPage() {
         <Separator />
 
         <Section
-          title="Seu trabalho e a margem"
+          title="Seu trabalho, a embalagem e a margem"
           caption="entram no preço sugerido, não no custo"
         >
           {LABOR_FIELDS.map(field)}

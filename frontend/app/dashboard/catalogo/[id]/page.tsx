@@ -13,7 +13,7 @@ import {
   Trash2,
   TriangleAlert,
 } from "lucide-react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -44,12 +44,14 @@ import { useCatalogData } from "@/hooks/use-catalog-data";
 import { useCatalogItem } from "@/hooks/use-catalog-item";
 import {
   ResolvedVariant,
+  VariantPricing,
   describeKind,
   getKitCalculated,
   lowColorWarning,
+  pricingRows,
   resolveCatalogItem,
 } from "@/lib/api/catalog";
-import { formatDecimal, formatGrams } from "@/lib/api/print";
+import { CostContext, formatDecimal, formatGrams } from "@/lib/api/print";
 import { cn, formatBRL } from "@/lib/utils";
 
 function queueHref(variant: ResolvedVariant) {
@@ -58,6 +60,75 @@ function queueHref(variant: ResolvedVariant) {
 
 function formatWholeBRL(value: number) {
   return `R$ ${Math.round(value).toLocaleString("pt-BR")}`;
+}
+
+function PricingLine({
+  label,
+  value,
+  strong,
+}: {
+  label: string;
+  value: number;
+  strong?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex",
+        strong && "mt-0.5 border-t border-border/60 pt-1.5 text-foreground",
+      )}
+    >
+      <span>{label}</span>
+      <span className="ml-auto">{formatBRL(value)}</span>
+    </div>
+  );
+}
+
+// Como o detalhe do registro em Impressões: de onde sai cada valor da linha.
+function VariantPricingDetails({
+  pricing,
+  costs,
+  isKit,
+}: {
+  pricing: VariantPricing;
+  costs: CostContext;
+  isKit: boolean;
+}) {
+  const rows = pricingRows(pricing, costs);
+  return (
+    <div className="grid grid-cols-1 gap-5 border-b border-border/60 bg-foreground/2.5 py-4 pr-4 pl-4 sm:grid-cols-2">
+      <div className="flex flex-col gap-1.5">
+        <SectionLabel>Custo da impressão / un.</SectionLabel>
+        <div className="flex flex-col gap-1 text-[12px] text-muted-foreground tabular-nums">
+          {rows.print.map(([label, value]) => (
+            <PricingLine key={label} label={label} value={value} />
+          ))}
+          <PricingLine label="Impressão" value={pricing.print.total} strong />
+        </div>
+        <p className="text-[11px] leading-relaxed text-muted-foreground/80">
+          Do registro padrão, com cada filamento no rolo mais caro em estoque do
+          mesmo material: o cliente pode escolher qualquer cor.
+        </p>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <SectionLabel>Venda / un.</SectionLabel>
+        <div className="flex flex-col gap-1 text-[12px] text-muted-foreground tabular-nums">
+          <PricingLine label="Impressão" value={pricing.print.total} />
+          <PricingLine label={rows.sale[0][0]} value={rows.sale[0][1]} />
+          <PricingLine label="Custo" value={pricing.cost} strong />
+          {rows.sale.slice(1).map(([label, value]) => (
+            <PricingLine key={label} label={label} value={value} />
+          ))}
+          <PricingLine label="Calculado" value={pricing.calculated} strong />
+        </div>
+        <p className="text-[11px] leading-relaxed text-muted-foreground/80">
+          {isKit
+            ? "No kit, a embalagem entra uma vez só no preço do kit, não uma por peça."
+            : `Mão de obra: ${formatDecimal(costs.settings.prepMinutesPerPiece)} min de preparo a ${formatBRL(costs.settings.laborCostPerHour)}/h. A margem vale sobre o custo mais a mão de obra.`}
+        </p>
+      </div>
+    </div>
+  );
 }
 
 export default function CatalogItemPage() {
@@ -78,6 +149,11 @@ export default function CatalogItemPage() {
   const loadError = itemError ?? dataError;
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [activePhoto, setActivePhoto] = useState(0);
+  const [openVariantId, setOpenVariantId] = useState<string | null>(null);
+
+  function toggleVariant(id: string) {
+    setOpenVariantId((current) => (current === id ? null : id));
+  }
 
   const resolved =
     item && data
@@ -330,58 +406,85 @@ export default function CatalogItemPage() {
                     <SectionLabel className="text-right">Preço</SectionLabel>
                   )}
                 </div>
-                {resolved.variants.map((v) => (
-                  <div
-                    key={v.id}
-                    className={cn(
-                      "grid items-center gap-3 border-b border-border/60 py-2.75",
-                      rowGrid,
-                    )}
-                  >
-                    {isSizes && (
-                      <span className="font-heading text-sm font-medium">
-                        {v.label}
-                      </span>
-                    )}
-                    {v.print ? (
-                      <Link
-                        href={`/dashboard/impressoes/${v.print.id}`}
-                        className="flex min-w-0 items-center gap-1.75 text-[13px] text-brand-300 hover:underline"
+                {resolved.variants.map((v) => {
+                  const isOpen = openVariantId === v.id;
+                  return (
+                    <Fragment key={v.id}>
+                      <div
+                        role={v.pricing ? "button" : undefined}
+                        tabIndex={v.pricing ? 0 : undefined}
+                        aria-expanded={v.pricing ? isOpen : undefined}
+                        onClick={() => v.pricing && toggleVariant(v.id)}
+                        onKeyDown={(e) => {
+                          if (!v.pricing || e.target !== e.currentTarget)
+                            return;
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            toggleVariant(v.id);
+                          }
+                        }}
+                        className={cn(
+                          "grid items-center gap-3 border-b border-border/60 py-2.75",
+                          rowGrid,
+                          v.pricing &&
+                            "cursor-pointer transition-colors hover:bg-foreground/4 focus-visible:outline-2 focus-visible:outline-brand",
+                          isOpen && "bg-foreground/4",
+                        )}
                       >
-                        <LinkIcon
-                          className="size-3 shrink-0"
-                          aria-hidden="true"
-                        />
-                        <span className="truncate">{v.print.name}</span>
-                      </Link>
-                    ) : (
-                      <span className="text-[13px] text-muted-foreground">
-                        Impressão excluída
-                      </span>
-                    )}
-                    <span className="text-[12.5px] text-foreground/70 tabular-nums">
-                      {v.grams != null ? formatGrams(v.grams) : "–"}
-                    </span>
-                    <span className="text-right text-[12.5px] text-foreground/70 tabular-nums">
-                      {v.cost != null ? formatBRL(v.cost) : "–"}
-                    </span>
-                    <span className="text-right text-[12.5px] text-muted-foreground tabular-nums">
-                      {v.calculated != null ? formatBRL(v.calculated) : "–"}
-                    </span>
-                    {!isKit && (
-                      <span className="text-right">
-                        <span className="font-heading text-sm font-medium tabular-nums">
-                          {v.price != null ? formatBRL(v.price) : "–"}
-                        </span>
-                        {v.priceOverride != null && (
-                          <span className="block text-[10.5px] text-muted-foreground/80">
-                            manual
+                        {isSizes && (
+                          <span className="font-heading text-sm font-medium">
+                            {v.label}
                           </span>
                         )}
-                      </span>
-                    )}
-                  </div>
-                ))}
+                        {v.print ? (
+                          <Link
+                            href={`/dashboard/impressoes/${v.print.id}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex min-w-0 items-center gap-1.75 text-[13px] text-brand-300 hover:underline"
+                          >
+                            <LinkIcon
+                              className="size-3 shrink-0"
+                              aria-hidden="true"
+                            />
+                            <span className="truncate">{v.print.name}</span>
+                          </Link>
+                        ) : (
+                          <span className="text-[13px] text-muted-foreground">
+                            Impressão excluída
+                          </span>
+                        )}
+                        <span className="text-[12.5px] text-foreground/70 tabular-nums">
+                          {v.grams != null ? formatGrams(v.grams) : "–"}
+                        </span>
+                        <span className="text-right text-[12.5px] text-foreground/70 tabular-nums">
+                          {v.cost != null ? formatBRL(v.cost) : "–"}
+                        </span>
+                        <span className="text-right text-[12.5px] text-muted-foreground tabular-nums">
+                          {v.calculated != null ? formatBRL(v.calculated) : "–"}
+                        </span>
+                        {!isKit && (
+                          <span className="text-right">
+                            <span className="font-heading text-sm font-medium tabular-nums">
+                              {v.price != null ? formatBRL(v.price) : "–"}
+                            </span>
+                            {v.priceOverride != null && (
+                              <span className="block text-[10.5px] text-muted-foreground/80">
+                                manual
+                              </span>
+                            )}
+                          </span>
+                        )}
+                      </div>
+                      {isOpen && v.pricing && (
+                        <VariantPricingDetails
+                          pricing={v.pricing}
+                          costs={data.costs}
+                          isKit={isKit}
+                        />
+                      )}
+                    </Fragment>
+                  );
+                })}
                 {isKit && (
                   <div
                     className={cn("grid items-baseline gap-3 py-2.75", rowGrid)}
@@ -406,10 +509,6 @@ export default function CatalogItemPage() {
                 )}
               </div>
             </div>
-            <p className="pt-2.25 text-[11.5px] text-muted-foreground/80">
-              O custo vem do registro padrão de cada impressão. Se o padrão
-              mudar, o calculado atualiza; o preço manual fica.
-            </p>
           </section>
 
           <section className="flex flex-col">

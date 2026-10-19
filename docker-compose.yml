@@ -1,0 +1,31 @@
+# Uso no servidor:
+#   1. cp .env.example .env                                  (URLs públicas)
+#   2. cp backend/.env.production.example backend/.env.production   (segredos)
+#   3. docker compose up -d --build
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file: ./backend/.env.production
+    environment:
+      PORT: 3001
+      FRONTEND_URL: ${FRONTEND_URL:?defina FRONTEND_URL no .env}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    volumes:
+      - uploads:/app/uploads
+    ports:
+      - "3001:3001"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?defina NEXT_PUBLIC_API_URL no .env}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+volumes:
+  uploads:
