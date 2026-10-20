@@ -187,8 +187,11 @@ export type QueueQuote = {
 
 /**
  * Orçamento rápido: custo do lote (como em Impressões), mais a mão de obra
- * do preparo de cada peça, com a margem padrão por cima. O preço final é
- * definido no Catálogo.
+ * de um preparo, com a margem padrão por cima. O preço final é definido no
+ * Catálogo.
+ *
+ * Uma entrada é uma impressão: as unidades saem juntas da mesma mesa, então
+ * o preparo conta uma vez, não uma por unidade.
  */
 export function quoteEntry(
   entry: Pick<QueueEntry, "filaments" | "totalMinutes" | "units" | "printer">,
@@ -196,10 +199,8 @@ export function quoteEntry(
 ): QueueQuote {
   const breakdown = computeCost({ ...entry, outcome: "SUCCESS" }, ctx);
   const cost = breakdown.total;
-  const units = Math.max(1, entry.units);
   const labor =
-    ((ctx.settings.prepMinutesPerPiece * units) / 60) *
-    ctx.settings.laborCostPerHour;
+    (ctx.settings.prepMinutesPerPiece / 60) * ctx.settings.laborCostPerHour;
   const price = (cost + labor) * (1 + ctx.settings.defaultMarginPercent / 100);
   return { breakdown, cost, labor, price };
 }
