@@ -129,12 +129,12 @@ const filamentFormSchema = z
   .refine(
     (values) => isValidTempRange(values.nozzleTempMin, values.nozzleTempMax),
     {
-      message: "A final precisa ser maior ou igual à inicial.",
+      message: "A máxima precisa ser maior ou igual à mínima.",
       path: ["nozzleTempMax"],
     },
   )
   .refine((values) => isValidTempRange(values.bedTempMin, values.bedTempMax), {
-    message: "A final precisa ser maior ou igual à inicial.",
+    message: "A máxima precisa ser maior ou igual à mínima.",
     path: ["bedTempMax"],
   });
 
@@ -755,7 +755,7 @@ export function FilamentForm({
                 name="nozzleTempMin"
                 render={({ field }) => (
                   <FormItem className="w-32">
-                    <FormLabel>Bico inicial</FormLabel>
+                    <FormLabel>Bico mínimo</FormLabel>
                     <FormControl>
                       <SuffixInput
                         suffix="°C"
@@ -776,7 +776,7 @@ export function FilamentForm({
                 name="nozzleTempMax"
                 render={({ field }) => (
                   <FormItem className="w-32">
-                    <FormLabel>Bico final</FormLabel>
+                    <FormLabel>Bico máximo</FormLabel>
                     <FormControl>
                       <SuffixInput
                         suffix="°C"
@@ -797,7 +797,7 @@ export function FilamentForm({
                 name="bedTempMin"
                 render={({ field }) => (
                   <FormItem className="w-32">
-                    <FormLabel>Mesa inicial</FormLabel>
+                    <FormLabel>Mesa mínima</FormLabel>
                     <FormControl>
                       <SuffixInput
                         suffix="°C"
@@ -818,7 +818,7 @@ export function FilamentForm({
                 name="bedTempMax"
                 render={({ field }) => (
                   <FormItem className="w-32">
-                    <FormLabel>Mesa final</FormLabel>
+                    <FormLabel>Mesa máxima</FormLabel>
                     <FormControl>
                       <SuffixInput
                         suffix="°C"
