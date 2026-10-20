@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { PrintPicker } from "@/components/catalog/print-picker";
 import {
   EMPTY_USAGE,
   FilamentUsageDraft,
@@ -302,31 +303,12 @@ export function QueueEntryForm() {
               title="Uma impressão que já existe"
               description="Filamento, tempo e impressora vêm do registro padrão."
             >
-              <Select
-                value={draft.itemId || null}
-                onValueChange={(value) => value && chooseItem(value)}
-              >
-                <SelectTrigger aria-label="Impressão" className="w-full">
-                  <SelectValue>
-                    {(value: string) =>
-                      items.find((i) => i.id === value)?.name ?? (
-                        <span className="text-muted-foreground">
-                          {items.length
-                            ? "Escolha a impressão"
-                            : "Carregando..."}
-                        </span>
-                      )
-                    }
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {items.map((i) => (
-                    <SelectItem key={i.id} value={i.id}>
-                      {i.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <PrintPicker
+                prints={items}
+                value={draft.itemId}
+                onChange={chooseItem}
+                minQueryLength={3}
+              />
             </ChoiceCard>
             <ChoiceCard
               selected={draft.source === "new"}

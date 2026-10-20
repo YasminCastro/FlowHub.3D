@@ -9,16 +9,19 @@ import { PrintItem } from "@/lib/api/print";
 import { cn } from "@/lib/utils";
 
 // Busca da impressão ligada ao item do catálogo. Com muitas peças a lista
-// inteira atrapalha, então ela só abre depois que o nome começa a ser digitado.
+// inteira atrapalha, então ela só abre depois que o nome começa a ser digitado
+// (a partir de `minQueryLength` letras).
 export function PrintPicker({
   prints,
   value,
   onChange,
+  minQueryLength = 1,
   className,
 }: {
   prints: PrintItem[];
   value: string;
   onChange: (printItemId: string) => void;
+  minQueryLength?: number;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -33,7 +36,7 @@ export function PrintPicker({
       itemToStringLabel={(print: PrintItem) => print.name}
       isItemEqualToValue={(a: PrintItem, b: PrintItem) => a.id === b.id}
       onInputValueChange={setQuery}
-      open={open && query.trim() !== ""}
+      open={open && query.trim().length >= minQueryLength}
       onOpenChange={setOpen}
       openOnInputClick={false}
       autoHighlight
