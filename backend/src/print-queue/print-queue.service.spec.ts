@@ -66,6 +66,7 @@ describe('PrintQueueService', () => {
       totalMinutes: 168,
       customer: 'Ana · pedido #112',
       modelUrl: 'makerworld.com/models/porquinho',
+      note: null,
       printItemId,
       printItem: { id: printItemId, name: 'Chaveiro de porco' },
       printerId,
@@ -105,6 +106,7 @@ describe('PrintQueueService', () => {
       totalMinutes: 168,
       customer: '  Ana · pedido #112  ',
       modelUrl: null,
+      note: '  Lixar a base  ',
       ...overrides,
     };
   }
@@ -175,6 +177,7 @@ describe('PrintQueueService', () => {
       const data = dataOf(prisma.printQueueEntry.create);
       expect(data.position).toBe(3);
       expect(data.customer).toBe('Ana · pedido #112');
+      expect(data.note).toBe('Lixar a base');
       expect(data.printerName).toBe('Bambu A1');
       expect(data).toMatchObject({
         filaments: {
@@ -247,6 +250,70 @@ describe('PrintQueueService', () => {
       await expect(
         service.createEntry(userId, entryDto({ name: '   ' })),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('updateEntry', () => {
+    beforeEach(() => {
+      prisma.printQueueEntry.findFirst.mockResolvedValue(entryRow());
+      prisma.printItem.findFirst.mockResolvedValue(savedItem);
+      prisma.printer.findFirst.mockResolvedValue({
+        id: printerId,
+        name: 'Bambu A1',
+      });
+      prisma.filament.findMany.mockResolvedValue([filament]);
+      prisma.printQueueEntry.update.mockResolvedValue(entryRow());
+    });
+
+    it('replaces the fields and the filaments, keeping the position', async () => {
+      const result = await service.updateEntry(
+        entryId,
+        userId,
+        entryDto({
+          units: 6,
+          printItemId: null,
+          name: '  Porquinho  ',
+          note: '   ',
+        }),
+      );
+
+      expect(argOf(prisma.printQueueEntry.findFirst).where).toEqual({
+        id: entryId,
+        userId,
+        completedAt: null,
+      });
+      const data = dataOf(prisma.printQueueEntry.update);
+      expect(data).toMatchObject({
+        name: 'Porquinho',
+        units: 6,
+        printItemId: null,
+        customer: 'Ana · pedido #112',
+        note: null,
+        filaments: {
+          deleteMany: {},
+          create: [{ grams: 36, pricePerGram: 0.09, filamentId }],
+        },
+      });
+      expect(data).not.toHaveProperty('position');
+      expect(result.message).toBe('Item da fila atualizado');
+    });
+
+    it('does not edit an entry that already left the queue', async () => {
+      prisma.printQueueEntry.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.updateEntry(entryId, userId, entryDto()),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.printQueueEntry.update).not.toHaveBeenCalled();
+    });
+
+    it("rejects someone else's printer", async () => {
+      prisma.printer.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.updateEntry(entryId, userId, entryDto()),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.printQueueEntry.update).not.toHaveBeenCalled();
     });
   });
 

@@ -35,6 +35,7 @@ export type QueueEntry = {
   totalMinutes: number;
   customer: string | null;
   modelUrl: string | null;
+  note: string | null;
   createdAt: string;
   // A última falha; some quando o item é concluído com sucesso.
   lastFailure: QueueFailure | null;
@@ -52,6 +53,7 @@ export type QueueEntryInput = Pick<
   | "totalMinutes"
   | "customer"
   | "modelUrl"
+  | "note"
 >;
 
 export type QueuePosition = "first" | "last";
@@ -97,27 +99,40 @@ export async function getQueueEntry(id: string) {
   );
 }
 
+function toEntryPayload(input: QueueEntryInput) {
+  if (!input.printer.id) throw new Error("Escolha a impressora.");
+  return {
+    name: input.name,
+    printItemId: input.printItem?.id ?? null,
+    printerId: input.printer.id,
+    filaments: input.filaments.map((usage) => ({
+      filamentId: usage.filament.id,
+      grams: Math.round(usage.grams * 100) / 100,
+    })),
+    units: input.units,
+    totalMinutes: Math.round(input.totalMinutes),
+    customer: input.customer,
+    modelUrl: input.modelUrl,
+    note: input.note,
+  };
+}
+
 export async function addToQueue(
   input: QueueEntryInput,
   position: QueuePosition,
 ) {
-  if (!input.printer.id) throw new Error("Escolha a impressora.");
   const data = (await apiFetch("/print-queue", {
     method: "POST",
-    body: JSON.stringify({
-      name: input.name,
-      printItemId: input.printItem?.id ?? null,
-      printerId: input.printer.id,
-      filaments: input.filaments.map((usage) => ({
-        filamentId: usage.filament.id,
-        grams: Math.round(usage.grams * 100) / 100,
-      })),
-      units: input.units,
-      totalMinutes: Math.round(input.totalMinutes),
-      customer: input.customer,
-      modelUrl: input.modelUrl,
-      position,
-    }),
+    body: JSON.stringify({ ...toEntryPayload(input), position }),
+  })) as EntryResponse;
+  return fromEntryResponse(data.data);
+}
+
+// Só pendentes. A posição não muda aqui, só arrastando na fila.
+export async function updateQueueEntry(id: string, input: QueueEntryInput) {
+  const data = (await apiFetch(`/print-queue/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(toEntryPayload(input)),
   })) as EntryResponse;
   return fromEntryResponse(data.data);
 }
@@ -203,6 +218,65 @@ export function quoteEntry(
     (ctx.settings.prepMinutesPerPiece / 60) * ctx.settings.laborCostPerHour;
   const price = (cost + labor) * (1 + ctx.settings.defaultMarginPercent / 100);
   return { breakdown, cost, labor, price };
+}
+
+export type QueueSort = "manual" | "shortest" | "longest";
+
+export type QueueView = { sort: QueueSort; byFilament: boolean };
+
+function filamentIds(entry: QueueEntry) {
+  return entry.filaments.map((usage) => usage.filament.id);
+}
+
+/**
+ * Quantas vezes é preciso pôr um rolo seguindo esta ordem: cada filamento
+ * que o item usa e o anterior não usava conta uma troca.
+ */
+export function countFilamentSwaps(entries: QueueEntry[]) {
+  return entries.reduce((swaps, entry, i) => {
+    if (i === 0) return swaps;
+    const previous = new Set(filamentIds(entries[i - 1]));
+    return swaps + filamentIds(entry).filter((id) => !previous.has(id)).length;
+  }, 0);
+}
+
+/**
+ * Ordena os pendentes (recebidos na ordem manual) sem mexer na fila salva.
+ * Empates ficam na ordem manual.
+ *
+ * Por filamento, segue uma sequência de rolos para trocar o mínimo possível.
+ * Os filamentos entram na sequência na ordem em que aparecem (já ordenados
+ * pelo tempo, se for o caso), e cada item vai para o trecho do primeiro e do
+ * último rolo que usa: vermelho, depois vermelho + preto, depois preto.
+ * Itens com os mesmos rolos ficam na ordem escolhida.
+ */
+export function sortQueue(entries: QueueEntry[], view: QueueView) {
+  const direction = view.sort === "shortest" ? 1 : -1;
+  // sort é estável: empates mantêm a ordem manual.
+  const sorted =
+    view.sort === "manual"
+      ? entries
+      : [...entries].sort(
+          (a, b) => (a.totalMinutes - b.totalMinutes) * direction,
+        );
+  if (!view.byFilament) return sorted;
+
+  const sequence = new Map<string, number>();
+  for (const id of sorted.flatMap(filamentIds)) {
+    if (!sequence.has(id)) sequence.set(id, sequence.size);
+  }
+  // Sem filamento, vai para o fim.
+  const span = (entry: QueueEntry) => {
+    const ranks = filamentIds(entry).map((id) => sequence.get(id)!);
+    return ranks.length
+      ? [Math.min(...ranks), Math.max(...ranks)]
+      : [sequence.size, sequence.size];
+  };
+  return [...sorted].sort((a, b) => {
+    const [aFirst, aLast] = span(a);
+    const [bFirst, bLast] = span(b);
+    return aFirst - bFirst || aLast - bLast;
+  });
 }
 
 export function isRecentlyDone(entry: QueueEntry, now = new Date()) {

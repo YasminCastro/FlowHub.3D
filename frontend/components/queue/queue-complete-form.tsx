@@ -48,6 +48,7 @@ import {
   SectionLabel,
   SuffixInput,
   durationToMinutes,
+  minutesToDuration,
 } from "@/components/prints/print-bits";
 import {
   ChoiceCard,
@@ -73,6 +74,7 @@ import {
   computeCostPerUnit,
   describeChanges,
   describePrintFilament,
+  formatDecimalInput,
   formatDuration,
   formatGrams,
   getDefaultRecord,
@@ -155,6 +157,9 @@ export function QueueCompleteForm({ entryId }: { entryId: string }) {
         setNewName(found.name);
         setPrinterId(found.printer.id ?? "");
         setUnitsText(String(found.units));
+        // Começa com o estimado da fila; o usuário corrige se gastou diferente.
+        setRealGrams(formatDecimalInput(getEntryGrams(found), 1));
+        setRealTime(minutesToDuration(found.totalMinutes));
         setUsageDrafts(
           found.filaments.map((u) => usageDraftFrom(u.filament, u.grams)),
         );
@@ -665,8 +670,9 @@ export function QueueCompleteForm({ entryId }: { entryId: string }) {
           </div>
           {!isFailure && (
             <p className="-mt-1.5 text-[11.5px] text-muted-foreground/80">
-              Em branco, vale o estimado ({formatGrams(plannedGrams)} e{" "}
-              {formatDuration(plannedMinutes)}).
+              Gramas e tempo vêm do estimado na fila (
+              {formatGrams(plannedGrams)} e {formatDuration(plannedMinutes)});
+              ajuste se foi diferente.
             </p>
           )}
 
@@ -879,7 +885,8 @@ export function QueueCompleteForm({ entryId }: { entryId: string }) {
               ))}
               <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground/80">
                 <ScrollText className="size-3" aria-hidden="true" />
-                {realGrams.trim()
+                {realGrams.trim() &&
+                realGrams !== formatDecimalInput(plannedGrams, 1)
                   ? "Gramas reais."
                   : "Estimado. Atualiza com as gramas reais."}
               </span>
@@ -901,9 +908,7 @@ export function QueueCompleteForm({ entryId }: { entryId: string }) {
             {!isFailure && (
               <div className="flex">
                 <span>Por unidade</span>
-                <span className="ml-auto">
-                  {formatBRL(costPerUnit!.total)}
-                </span>
+                <span className="ml-auto">{formatBRL(costPerUnit!.total)}</span>
               </div>
             )}
           </div>

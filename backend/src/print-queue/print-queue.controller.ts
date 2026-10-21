@@ -14,6 +14,7 @@ import {
   FinishQueueEntryDto,
   QueueEntryDto,
   ReorderQueueDto,
+  UpdateQueueEntryDto,
 } from './dto/print-queue.js';
 
 @Controller('print-queue')
@@ -48,6 +49,15 @@ export class PrintQueueController {
     @Param('id') entryId: string,
   ) {
     return this.printQueueService.getEntryById(entryId, currentUserId);
+  }
+
+  @Patch(':id')
+  update(
+    @CurrentUser('userId') currentUserId: string,
+    @Param('id') entryId: string,
+    @Body() dto: UpdateQueueEntryDto,
+  ) {
+    return this.printQueueService.updateEntry(entryId, currentUserId, dto);
   }
 
   @Delete(':id')

@@ -16,7 +16,7 @@ import {
   PrintFilament,
   PrintFilamentUsage,
   describeSpoolLevel,
-  formatDecimal,
+  formatDecimalInput,
   isDeletedFilament,
 } from "@/lib/api/print";
 import { cn, formatBRL } from "@/lib/utils";
@@ -51,7 +51,7 @@ export function usageDraftFrom(
     type: filament.type,
     brandName: filament.brandName,
     filamentId: isDeletedFilament(filament) && !keepDeleted ? "" : filament.id,
-    grams: formatDecimal(grams, 1),
+    grams: formatDecimalInput(grams, 1),
   };
 }
 

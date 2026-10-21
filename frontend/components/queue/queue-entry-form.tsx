@@ -15,7 +15,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { PrintPicker } from "@/components/catalog/print-picker";
+import { NotFoundState } from "@/components/dashboard/not-found-state";
 import {
   EMPTY_USAGE,
   FilamentUsageDraft,
@@ -46,18 +49,28 @@ import {
   usePageHeaderBreadcrumb,
 } from "@/contexts/page-header-action-context";
 import { useCostContext } from "@/hooks/use-cost-context";
+import { ApiError } from "@/lib/api/auth";
+import { isNotFoundError } from "@/lib/api/client";
 import {
   PrintFilament,
   PrintItem,
   costRows,
   formatDecimal,
+  formatDecimalInput,
   formatDuration,
   formatGrams,
   getDefaultRecord,
   listPrintFilaments,
   listPrintItems,
 } from "@/lib/api/print";
-import { QueuePosition, addToQueue, quoteEntry } from "@/lib/api/print-queue";
+import {
+  QueueEntry,
+  QueuePosition,
+  addToQueue,
+  getQueueEntry,
+  quoteEntry,
+  updateQueueEntry,
+} from "@/lib/api/print-queue";
 import { formatBRL, formatDatePtBR } from "@/lib/utils";
 
 type Source = "item" | "new";
@@ -72,6 +85,7 @@ type Draft = {
   printerId: string;
   customer: string;
   modelUrl: string;
+  note: string;
   position: QueuePosition;
 };
 
@@ -85,6 +99,7 @@ const EMPTY_DRAFT: Draft = {
   printerId: "",
   customer: "",
   modelUrl: "",
+  note: "",
   position: "last",
 };
 
@@ -114,6 +129,25 @@ function draftFromItem(item: PrintItem, units: number, prev: Draft): Draft {
   };
 }
 
+// Na edição, o rascunho começa com o que foi salvo na fila.
+function draftFromEntry(entry: QueueEntry): Draft {
+  return {
+    ...EMPTY_DRAFT,
+    source: entry.printItem ? "item" : "new",
+    itemId: entry.printItem?.id ?? "",
+    name: entry.name,
+    usages: entry.filaments.length
+      ? entry.filaments.map((u) => usageDraftFrom(u.filament, u.grams))
+      : [EMPTY_USAGE],
+    units: String(entry.units),
+    time: minutesToDuration(entry.totalMinutes),
+    printerId: entry.printer.id ?? "",
+    customer: entry.customer ?? "",
+    modelUrl: entry.modelUrl ?? "",
+    note: entry.note ?? "",
+  };
+}
+
 // Mudar a quantidade recalcula gramas e tempo na mesma proporção.
 function rescale(draft: Draft, nextUnitsText: string): Draft {
   const from = parseUnits(draft.units);
@@ -126,25 +160,64 @@ function rescale(draft: Draft, nextUnitsText: string): Draft {
     units: nextUnitsText,
     usages: draft.usages.map((u) =>
       u.grams
-        ? { ...u, grams: formatDecimal(parseDecimal(u.grams) * scale, 1) }
+        ? { ...u, grams: formatDecimalInput(parseDecimal(u.grams) * scale, 1) }
         : u,
     ),
     time: minutes == null ? draft.time : minutesToDuration(minutes * scale),
   };
 }
 
-export function QueueEntryForm() {
+/**
+ * Sem `entryId`, adiciona à fila; com ele, edita o item pendente. Com
+ * ?duplicar=, adiciona um item novo começando com os dados de outro.
+ */
+export function QueueEntryForm({ entryId }: { entryId?: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const itemParam = searchParams.get("impressao");
+  const isEditing = entryId != null;
+  const duplicateParam = isEditing ? null : searchParams.get("duplicar");
+  // O item de onde o rascunho começa: o editado ou o duplicado.
+  const sourceId = entryId ?? duplicateParam;
 
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+  const [entry, setEntry] = useState<QueueEntry | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isNotFound, setIsNotFound] = useState(false);
   const [items, setItems] = useState<PrintItem[]>([]);
   const [filaments, setFilaments] = useState<PrintFilament[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const { costs, loadError: costsError } = useCostContext();
   const printers = costs?.printers ?? [];
+
+  useEffect(() => {
+    if (!sourceId) return;
+    let ignore = false;
+    getQueueEntry(sourceId)
+      .then((found) => {
+        if (ignore) return;
+        // Duplicar um concluído vale: é imprimir de novo.
+        if (isEditing && found.completedAt) {
+          setLoadError("Este item já foi concluído e não pode ser editado.");
+          return;
+        }
+        setEntry(found);
+        setDraft(draftFromEntry(found));
+      })
+      .catch((err) => {
+        if (ignore) return;
+        setIsNotFound(isNotFoundError(err));
+        setLoadError(
+          err instanceof ApiError
+            ? err.message
+            : "Não foi possível carregar o item da fila.",
+        );
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [sourceId, isEditing]);
 
   useEffect(() => {
     listPrintFilaments()
@@ -156,6 +229,8 @@ export function QueueEntryForm() {
           a.name.localeCompare(b.name, "pt-BR"),
         );
         setItems(sorted);
+        // Editando ou duplicando, o rascunho vem do item salvo.
+        if (sourceId) return;
         const preset = sorted.find((item) => item.id === itemParam);
         if (preset) {
           setDraft((prev) =>
@@ -166,7 +241,7 @@ export function QueueEntryForm() {
         }
       })
       .catch(() => setItems([]));
-  }, [itemParam]);
+  }, [itemParam, sourceId]);
 
   function set<K extends keyof Draft>(key: K, value: Draft[K]) {
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -211,69 +286,136 @@ export function QueueEntryForm() {
     const problem = validate();
     setError(problem);
     if (problem) return;
+    const input = {
+      name,
+      printItem:
+        draft.source === "item" && item
+          ? { id: item.id, name: item.name }
+          : null,
+      printer: { id: printer!.id, name: printer!.name },
+      filaments: usages,
+      units,
+      totalMinutes: minutes,
+      customer: draft.customer.trim() || null,
+      modelUrl: draft.modelUrl.trim() || null,
+      note: draft.note.trim() || null,
+    };
     setIsSaving(true);
     try {
-      await addToQueue(
-        {
-          name,
-          printItem:
-            draft.source === "item" && item
-              ? { id: item.id, name: item.name }
-              : null,
-          printer: { id: printer!.id, name: printer!.name },
-          filaments: usages,
-          units,
-          totalMinutes: minutes,
-          customer: draft.customer.trim() || null,
-          modelUrl: draft.modelUrl.trim() || null,
-        },
-        draft.position,
-      );
-      router.push("/dashboard/fila");
+      if (entryId) {
+        await updateQueueEntry(entryId, input);
+        router.push(`/dashboard/fila/${entryId}`);
+      } else {
+        await addToQueue(input, draft.position);
+        router.push("/dashboard/fila");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível salvar.");
       setIsSaving(false);
     }
   }
 
+  const backHref = sourceId ? `/dashboard/fila/${sourceId}` : "/dashboard/fila";
+
   usePageHeaderBreadcrumb(
-    <>
-      <Link
-        href="/dashboard/fila"
-        className="text-muted-foreground hover:text-foreground"
-      >
-        Fila de impressão
-      </Link>
-      <ChevronRight
-        className="size-3.5 text-muted-foreground"
-        aria-hidden="true"
-      />
-      <span className="font-medium">Adicionar</span>
-    </>,
+    isNotFound ? null : (
+      <>
+        <Link
+          href="/dashboard/fila"
+          className="text-muted-foreground hover:text-foreground"
+        >
+          Fila de impressão
+        </Link>
+        <ChevronRight
+          className="size-3.5 text-muted-foreground"
+          aria-hidden="true"
+        />
+        {sourceId ? (
+          <>
+            {entry && (
+              <>
+                <Link
+                  href={backHref}
+                  className="truncate text-muted-foreground hover:text-foreground"
+                >
+                  {entry.name}
+                </Link>
+                <ChevronRight
+                  className="size-3.5 text-muted-foreground"
+                  aria-hidden="true"
+                />
+              </>
+            )}
+            <span className="font-medium">
+              {isEditing ? "Editar" : "Duplicar"}
+            </span>
+          </>
+        ) : (
+          <span className="font-medium">Adicionar</span>
+        )}
+      </>
+    ),
   );
 
   usePageHeaderAction(
-    <>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        onClick={() => router.push("/dashboard/fila")}
-      >
-        Cancelar
-      </Button>
-      <Button
-        type="button"
-        size="sm"
-        disabled={isSaving}
-        aria-busy={isSaving}
-        onClick={save}
-      >
-        <Check />
-        {isSaving ? "Salvando..." : "Adicionar à fila"}
-      </Button>
-    </>,
+    isNotFound || loadError ? null : (
+      <>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => router.push(backHref)}
+        >
+          Cancelar
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          disabled={isSaving || (sourceId != null && !entry)}
+          aria-busy={isSaving}
+          onClick={save}
+        >
+          <Check />
+          {isSaving
+            ? "Salvando..."
+            : isEditing
+              ? "Salvar alterações"
+              : "Adicionar à fila"}
+        </Button>
+      </>
+    ),
   );
+
+  if (isNotFound) return <NotFoundState resource="fila" />;
+
+  if (loadError) {
+    return (
+      <div className="flex flex-col gap-3 p-8">
+        <p role="alert" className="text-[12.5px] text-destructive">
+          {loadError}
+        </p>
+        <Link
+          href={backHref}
+          className="text-sm text-brand-300 hover:underline"
+        >
+          Voltar
+        </Link>
+      </div>
+    );
+  }
+
+  if (sourceId && !entry) {
+    return (
+      <div className="grid grid-cols-1 items-start gap-9 p-8 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="flex flex-col gap-6">
+          <Skeleton className="h-12 w-72" />
+          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-48 w-full" />
+        </div>
+        <Skeleton className="h-72 w-full" />
+      </div>
+    );
+  }
 
   const perUnitGrams = grams / units;
   const perUnitMinutes = minutes / units;
@@ -288,9 +430,15 @@ export function QueueEntryForm() {
         }}
       >
         <div>
-          <h1 className="text-4xl font-bold">Adicionar à fila</h1>
+          <h1 className="text-4xl font-bold">
+            {isEditing ? "Editar item da fila" : "Adicionar à fila"}
+          </h1>
           <p className="text-sm text-muted-foreground">
-            Um orçamento rápido: filamento e tempo bastam.
+            {isEditing
+              ? "Ao salvar, o orçamento usa o preço de hoje dos filamentos."
+              : entry
+                ? `Cópia de ${entry.name}. Ajuste o que mudar e adicione.`
+                : "Um orçamento rápido: filamento e tempo bastam."}
           </p>
         </div>
 
@@ -377,9 +525,8 @@ export function QueueEntryForm() {
           </div>
           {grams > 0 && minutes > 0 && (
             <p className="-mt-1.5 text-[11.5px] text-muted-foreground/80">
-              Gramas e tempo para {units}{" "}
-              {units === 1 ? "unidade" : "unidades"} (
-              {formatGrams(perUnitGrams)} e {formatDuration(perUnitMinutes)}{" "}
+              Gramas e tempo para {units} {units === 1 ? "unidade" : "unidades"}{" "}
+              ({formatGrams(perUnitGrams)} e {formatDuration(perUnitMinutes)}{" "}
               cada). Mudar a quantidade recalcula os dois.
             </p>
           )}
@@ -445,15 +592,34 @@ export function QueueEntryForm() {
               onChange={(e) => set("modelUrl", e.target.value)}
             />
           </Field>
-          <div className="flex flex-col gap-2">
-            <SectionLabel>Posição na fila</SectionLabel>
-            <PositionToggle
-              label="Posição na fila"
-              value={draft.position}
-              onChange={(value) => set("position", value)}
-              options={POSITION_OPTIONS}
+          <Field
+            label={
+              <>
+                Observação <OptionalHint />
+              </>
+            }
+            htmlFor="queue-note"
+          >
+            <Textarea
+              id="queue-note"
+              className="min-h-16"
+              placeholder="Ex.: imprimir em pé, lixar a base antes de entregar"
+              maxLength={500}
+              value={draft.note}
+              onChange={(e) => set("note", e.target.value)}
             />
-          </div>
+          </Field>
+          {!isEditing && (
+            <div className="flex flex-col gap-2">
+              <SectionLabel>Posição na fila</SectionLabel>
+              <PositionToggle
+                label="Posição na fila"
+                value={draft.position}
+                onChange={(value) => set("position", value)}
+                options={POSITION_OPTIONS}
+              />
+            </div>
+          )}
         </Step>
 
         {error && (

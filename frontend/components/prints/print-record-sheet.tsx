@@ -81,6 +81,7 @@ import {
   describeChanges,
   describePrintFilament,
   formatDecimal,
+  formatDecimalInput,
   formatDuration,
   formatGrams,
   getRecordGrams,
@@ -217,7 +218,7 @@ function RecordForm({
     editedFailure && !knownReason ? (base.failureReason ?? "") : "",
   );
   const [failureGrams, setFailureGrams] = useState(
-    editedFailure ? formatDecimal(getRecordGrams(base), 1) : "",
+    editedFailure ? formatDecimalInput(getRecordGrams(base), 1) : "",
   );
   const [failureTime, setFailureTime] = useState(
     editedFailure ? minutesToDuration(base.totalMinutes) : EMPTY_DURATION,
@@ -255,7 +256,7 @@ function RecordForm({
           return baseUsage
             ? {
                 ...row,
-                grams: formatDecimal((baseUsage.grams / baseUnits) * n, 1),
+                grams: formatDecimalInput((baseUsage.grams / baseUnits) * n, 1),
               }
             : row;
         }),

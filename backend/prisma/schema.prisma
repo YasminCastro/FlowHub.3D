@@ -487,6 +487,7 @@ model PrintQueueEntry {
   totalMinutes      Int
   customer          String?
   modelUrl          String?
+  note              String?
   // A impressão ligada: a escolhida ao adicionar ou onde foi registrada ao
   // concluir. SetNull: excluir a impressão não apaga o item da fila.
   printItemId       String?

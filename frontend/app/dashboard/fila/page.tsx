@@ -6,7 +6,9 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
+  Copy,
   GripVertical,
+  Layers,
   Link2,
   ListOrdered,
   Plus,
@@ -25,6 +27,7 @@ import {
   StatDivider,
 } from "@/components/prints/print-bits";
 import { FramedPhoto } from "@/components/prints/framed-photo";
+import { PositionToggle } from "@/components/queue/queue-bits";
 import { usePageHeaderAction } from "@/contexts/page-header-action-context";
 import { useCostContext } from "@/hooks/use-cost-context";
 import { ApiError } from "@/lib/api/auth";
@@ -38,19 +41,28 @@ import {
 } from "@/lib/api/print";
 import {
   QueueEntry,
+  QueueSort,
   RECENT_DONE_DAYS,
   isRecentlyDone,
   listQueue,
+  countFilamentSwaps,
   quoteEntry,
   removeFromQueue,
   reorderQueue,
+  sortQueue,
 } from "@/lib/api/print-queue";
 import { cn, formatBRL, formatDatePtBR } from "@/lib/utils";
 
 const ALL_PRINTERS = "all";
 
 const QUEUE_COLUMNS =
-  "grid-cols-[18px_22px_44px_minmax(160px,1.6fr)_minmax(110px,1fr)_92px_110px_50px_64px_76px_84px_134px]";
+  "grid-cols-[18px_22px_44px_minmax(160px,1.6fr)_minmax(110px,1fr)_92px_110px_50px_64px_76px_84px_166px]";
+
+const SORT_OPTIONS: { value: QueueSort; label: string }[] = [
+  { value: "manual", label: "Manual" },
+  { value: "shortest", label: "Menor tempo" },
+  { value: "longest", label: "Maior tempo" },
+];
 
 const DONE_COLUMNS =
   "grid-cols-[22px_90px_minmax(140px,1.6fr)_minmax(100px,1fr)_70px_minmax(180px,1.2fr)]";
@@ -156,6 +168,8 @@ export default function PrintQueuePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [printerFilter, setPrinterFilter] = useState(ALL_PRINTERS);
+  const [sort, setSort] = useState<QueueSort>("manual");
+  const [byFilament, setByFilament] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [showDone, setShowDone] = useState(true);
   const [showAllDone, setShowAllDone] = useState(false);
@@ -211,9 +225,17 @@ export default function PrintQueuePage() {
   ].sort((a, b) => a[1].localeCompare(b[1], "pt-BR"));
 
   const isFiltered = printerFilter !== ALL_PRINTERS;
-  const visible = isFiltered
-    ? pending.filter((e) => e.printer.id === printerFilter)
-    : pending;
+  const isSorted = sort !== "manual" || byFilament;
+  // Arrastar só faz sentido vendo a fila inteira, na ordem dela.
+  const canDrag = !isFiltered && !isSorted;
+  const visible = sortQueue(
+    isFiltered
+      ? pending.filter((e) => e.printer.id === printerFilter)
+      : pending,
+    { sort, byFilament },
+  );
+
+  const filamentSwaps = countFilamentSwaps(visible);
 
   const units = visible.reduce((sum, e) => sum + e.units, 0);
   const minutes = visible.reduce((sum, e) => sum + e.totalMinutes, 0);
@@ -226,6 +248,16 @@ export default function PrintQueuePage() {
     reorderQueue(next.map((e) => e.id)).catch(() =>
       setError("Não foi possível salvar a nova ordem."),
     );
+  }
+
+  // Grava a ordem que está na tela. Filtrado por impressora, os itens dela
+  // trocam de lugar entre si e o resto da fila fica onde estava.
+  function saveShownOrder() {
+    const shownIds = new Set(visible.map((e) => e.id));
+    const shown = [...visible];
+    persistOrder(pending.map((e) => (shownIds.has(e.id) ? shown.shift()! : e)));
+    setSort("manual");
+    setByFilament(false);
   }
 
   function moveBefore(id: string, targetId: string) {
@@ -299,7 +331,7 @@ export default function PrintQueuePage() {
 
     return (
       <div className="overflow-x-auto">
-        <div className="flex min-w-[1080px] flex-col" role="list">
+        <div className="flex min-w-[1112px] flex-col" role="list">
           <div
             className={cn(
               "grid items-center gap-3 py-2",
@@ -352,13 +384,15 @@ export default function PrintQueuePage() {
               >
                 <button
                   type="button"
-                  draggable={!isFiltered}
-                  disabled={isFiltered}
+                  draggable={canDrag}
+                  disabled={!canDrag}
                   aria-label={`Mover ${entry.name} (setas para cima e para baixo)`}
                   title={
-                    isFiltered
-                      ? "Mostre todas as impressoras para reordenar"
-                      : "Arraste para mudar a prioridade"
+                    isSorted
+                      ? "Volte para a ordem manual para arrastar"
+                      : isFiltered
+                        ? "Mostre todas as impressoras para reordenar"
+                        : "Arraste para mudar a prioridade"
                   }
                   onKeyDown={(e) => onHandleKey(e, entry.id)}
                   onDragStart={(e) => {
@@ -377,24 +411,17 @@ export default function PrintQueuePage() {
                   {position}
                 </span>
                 {photo ? (
-                  <FramedPhoto
-                    photo={photo}
-                    className="h-9 w-11 rounded-sm"
-                  />
+                  <FramedPhoto photo={photo} className="h-9 w-11 rounded-sm" />
                 ) : (
                   <PhotoPlaceholder className="h-9 w-11 rounded-sm [&_svg]:size-3.75" />
                 )}
                 <div className="min-w-0">
-                  {entry.printItem ? (
-                    <Link
-                      href={`/dashboard/impressoes/${entry.printItem.id}`}
-                      className="block truncate text-[13.5px] hover:text-brand"
-                    >
-                      {entry.name}
-                    </Link>
-                  ) : (
-                    <div className="truncate text-[13.5px]">{entry.name}</div>
-                  )}
+                  <Link
+                    href={`/dashboard/fila/${entry.id}`}
+                    className="block truncate text-[13.5px] hover:text-brand"
+                  >
+                    {entry.name}
+                  </Link>
                   <div className="mt-0.5 flex items-center gap-1.25 text-[11px] whitespace-nowrap text-muted-foreground">
                     <EntryOrigin entry={entry} />
                   </div>
@@ -444,6 +471,19 @@ export default function PrintQueuePage() {
                     onClick={() => remove(entry)}
                   >
                     <Trash2 />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Duplicar ${entry.name}`}
+                    title="Duplicar"
+                    className="text-muted-foreground"
+                    render={
+                      <Link href={`/dashboard/fila/new?duplicar=${entry.id}`} />
+                    }
+                    nativeButton={false}
+                  >
+                    <Copy />
                   </Button>
                   <Button
                     variant="secondary"
@@ -500,25 +540,64 @@ export default function PrintQueuePage() {
         />
       </div>
 
-      {printers.length > 1 && (
-        <div className="flex flex-wrap items-center gap-1.75">
-          <FilterChip
-            selected={!isFiltered}
-            onClick={() => setPrinterFilter(ALL_PRINTERS)}
-          >
-            Todas as impressoras
-          </FilterChip>
-          {printers.map(([id, name]) => (
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+        {printers.length > 1 && (
+          <div className="flex flex-wrap items-center gap-1.75">
             <FilterChip
-              key={id}
-              selected={printerFilter === id}
-              onClick={() =>
-                setPrinterFilter((prev) => (prev === id ? ALL_PRINTERS : id))
-              }
+              selected={!isFiltered}
+              onClick={() => setPrinterFilter(ALL_PRINTERS)}
             >
-              {name}
+              Todas as impressoras
             </FilterChip>
-          ))}
+            {printers.map(([id, name]) => (
+              <FilterChip
+                key={id}
+                selected={printerFilter === id}
+                onClick={() =>
+                  setPrinterFilter((prev) => (prev === id ? ALL_PRINTERS : id))
+                }
+              >
+                {name}
+              </FilterChip>
+            ))}
+          </div>
+        )}
+        {pending.length > 1 && (
+          <div className="ml-auto flex flex-wrap items-center gap-3">
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {filamentSwaps === 1
+                ? "1 troca de filamento"
+                : `${filamentSwaps} trocas de filamento`}
+            </span>
+            <FilterChip
+              selected={byFilament}
+              onClick={() => setByFilament((prev) => !prev)}
+            >
+              <Layers className="size-3.25" aria-hidden="true" />
+              Por filamento
+            </FilterChip>
+            <PositionToggle
+              label="Ordenar a fila"
+              value={sort}
+              onChange={setSort}
+              options={SORT_OPTIONS}
+            />
+          </div>
+        )}
+      </div>
+
+      {isSorted && pending.length > 1 && (
+        <div className="-mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span>
+            Só a visualização mudou; a ordem da fila continua a manual.
+          </span>
+          <button
+            type="button"
+            onClick={saveShownOrder}
+            className="text-brand-300 hover:underline"
+          >
+            Salvar como ordem da fila
+          </button>
         </div>
       )}
 
@@ -586,9 +665,12 @@ export default function PrintQueuePage() {
                     <span className="text-xs tabular-nums">
                       {entry.completedAt && formatDatePtBR(entry.completedAt)}
                     </span>
-                    <span className="truncate text-[13px] text-foreground/80">
+                    <Link
+                      href={`/dashboard/fila/${entry.id}`}
+                      className="truncate text-[13px] text-foreground/80 hover:text-brand"
+                    >
                       {entry.name}
-                    </span>
+                    </Link>
                     <span className="truncate text-[12.5px]">
                       {entry.customer ?? "—"}
                     </span>

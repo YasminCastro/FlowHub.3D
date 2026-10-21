@@ -813,6 +813,15 @@ export function formatDecimal(value: number, maxDigits = 2) {
   return value.toLocaleString("pt-BR", { maximumFractionDigits: maxDigits });
 }
 
+// Para preencher um campo: sem ponto de milhar, que o parseDecimal leria
+// errado ("1.234,5" vira zero).
+export function formatDecimalInput(value: number, maxDigits = 2) {
+  return value.toLocaleString("pt-BR", {
+    maximumFractionDigits: maxDigits,
+    useGrouping: false,
+  });
+}
+
 export function formatGrams(grams: number) {
   return `${formatDecimal(Math.round(grams * 10) / 10, 1)} g`;
 }

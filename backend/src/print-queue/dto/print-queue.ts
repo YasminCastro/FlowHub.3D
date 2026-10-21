@@ -1,3 +1,4 @@
+import { OmitType } from '@nestjs/mapped-types';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -85,11 +86,21 @@ export class QueueEntryDto {
   @MaxLength(PRINT_URL_MAX_LENGTH)
   modelUrl?: string | null;
 
+  @IsOptional()
+  @IsString()
+  @MaxLength(PRINT_TEXT_MAX_LENGTH)
+  note?: string | null;
+
   // Padrão: no fim.
   @IsOptional()
   @IsIn(QUEUE_POSITIONS)
   position?: QueuePosition;
 }
+
+// Editar troca tudo de uma vez; a posição muda pelo reorder.
+export class UpdateQueueEntryDto extends OmitType(QueueEntryDto, [
+  'position',
+] as const) {}
 
 export class ReorderQueueDto {
   // Ids dos pendentes na nova ordem.

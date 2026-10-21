@@ -10,6 +10,7 @@ import {
   QueueEntryDto,
   QueueFilamentDto,
   ReorderQueueDto,
+  UpdateQueueEntryDto,
 } from './dto/print-queue.js';
 import { Prisma } from '../generated/prisma/client.js';
 
@@ -156,6 +157,7 @@ export class PrintQueueService {
       totalMinutes: entry.totalMinutes,
       customer: entry.customer,
       modelUrl: entry.modelUrl,
+      note: entry.note,
       createdAt: entry.createdAt,
       completedAt: entry.completedAt,
       // null quando a impressão foi excluída depois.
@@ -213,24 +215,32 @@ export class PrintQueueService {
     return this.toResponse(await this.findOwnedEntry(entryId, userId));
   }
 
-  async createEntry(userId: string, data: QueueEntryDto) {
+  // Campos comuns ao criar e ao editar, já validados contra o usuário.
+  private async buildEntryData(userId: string, data: UpdateQueueEntryDto) {
     if (data.printItemId) {
       await this.findOwnedPrintItem(userId, data.printItemId);
     }
     const printer = await this.findOwnedPrinter(userId, data.printerId);
     const filaments = await this.snapshotFilaments(userId, data.filaments);
-    const entryData = {
-      name: this.requireText(data.name, 'Dê um nome para a peça.'),
-      units: data.units,
-      totalMinutes: data.totalMinutes,
-      customer: this.normalizeOptional(data.customer),
-      modelUrl: this.normalizeOptional(data.modelUrl),
-      printItemId: data.printItemId ?? null,
-      printerId: printer.id,
-      printerName: printer.name,
-      userId,
-      filaments: { create: filaments },
+    return {
+      fields: {
+        name: this.requireText(data.name, 'Dê um nome para a peça.'),
+        units: data.units,
+        totalMinutes: data.totalMinutes,
+        customer: this.normalizeOptional(data.customer),
+        modelUrl: this.normalizeOptional(data.modelUrl),
+        note: this.normalizeOptional(data.note),
+        printItemId: data.printItemId ?? null,
+        printerId: printer.id,
+        printerName: printer.name,
+      },
+      filaments,
     };
+  }
+
+  async createEntry(userId: string, data: QueueEntryDto) {
+    const { fields, filaments } = await this.buildEntryData(userId, data);
+    const entryData = { ...fields, userId, filaments: { create: filaments } };
 
     let entry: EntryWithRelations;
     if (data.position === 'first') {
@@ -261,6 +271,33 @@ export class PrintQueueService {
 
     return {
       message: 'Item adicionado à fila',
+      data: this.toResponse(entry),
+    };
+  }
+
+  // Só os pendentes: o concluído já virou registro em Impressões. Os
+  // filamentos são trocados inteiros e entram com o preço de hoje, como um
+  // orçamento novo.
+  async updateEntry(
+    entryId: string,
+    userId: string,
+    data: UpdateQueueEntryDto,
+  ) {
+    await this.findOwnedEntry(entryId, userId, { pendingOnly: true });
+    const { fields, filaments } = await this.buildEntryData(userId, data);
+
+    const entry = await this.prisma.printQueueEntry.update({
+      where: { id: entryId },
+      data: {
+        ...fields,
+        filaments: { deleteMany: {}, create: filaments },
+      },
+      omit: { userId: true },
+      include: entryInclude,
+    });
+
+    return {
+      message: 'Item da fila atualizado',
       data: this.toResponse(entry),
     };
   }
