@@ -98,8 +98,12 @@ const KIND_OPTIONS: {
   },
 ];
 
+// crypto.randomUUID só existe em contexto seguro (HTTPS/localhost); a chave é
+// apenas local para o React, então um contador basta.
+let variantKeySeq = 0;
+
 function emptyVariant(label = ""): VariantDraft {
-  return { key: crypto.randomUUID(), label, printItemId: "", price: "" };
+  return { key: `variant-${++variantKeySeq}`, label, printItemId: "", price: "" };
 }
 
 function priceText(value: number | null) {
