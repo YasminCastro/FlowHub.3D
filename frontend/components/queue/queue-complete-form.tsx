@@ -74,6 +74,7 @@ import {
   computeCostPerUnit,
   describeChanges,
   describePrintFilament,
+  formatDecimal,
   formatDecimalInput,
   formatDuration,
   formatGrams,
@@ -129,6 +130,8 @@ export function QueueCompleteForm({ entryId }: { entryId: string }) {
   const [date, setDate] = useState(today);
   const [realGrams, setRealGrams] = useState("");
   const [realTime, setRealTime] = useState<DurationDraft>(EMPTY_DURATION);
+  // Na falha: em quantos % a impressão parou.
+  const [stoppedAt, setStoppedAt] = useState("");
   const [outcome, setOutcome] = useState<PrintOutcome>("SUCCESS");
   const [reason, setReason] = useState<string | null>(null);
   const [otherReason, setOtherReason] = useState("");
@@ -212,9 +215,18 @@ export function QueueCompleteForm({ entryId }: { entryId: string }) {
   const plannedGrams = getEntryGrams({ filaments: plannedUsages });
   const plannedMinutes = entry?.totalMinutes ?? 0;
 
+  // Na falha, gramas e tempo saem do estimado na proporção do que imprimiu.
+  const stoppedPercent = Math.min(100, parseDecimal(stoppedAt));
+  const hasStoppedAt = stoppedAt.trim() !== "" && stoppedPercent > 0;
+  const stoppedFraction = stoppedPercent / 100;
+
   // As gramas reais se dividem entre os filamentos na proporção do previsto.
   const typedGrams = parseDecimal(realGrams);
-  const spentGrams = realGrams.trim() ? typedGrams : plannedGrams;
+  const spentGrams = isFailure
+    ? plannedGrams * stoppedFraction
+    : realGrams.trim()
+      ? typedGrams
+      : plannedGrams;
   const recordUsages = plannedUsages.map((u) => ({
     ...u,
     grams:
@@ -222,7 +234,9 @@ export function QueueCompleteForm({ entryId }: { entryId: string }) {
         ? (u.grams / plannedGrams) * spentGrams
         : spentGrams / Math.max(1, plannedUsages.length),
   }));
-  const recordMinutes = durationToMinutes(realTime) ?? plannedMinutes;
+  const recordMinutes = isFailure
+    ? Math.round(plannedMinutes * stoppedFraction)
+    : (durationToMinutes(realTime) ?? plannedMinutes);
 
   const costInput = {
     filaments: recordUsages,
@@ -256,8 +270,7 @@ export function QueueCompleteForm({ entryId }: { entryId: string }) {
     if (!recordUsages.length) return "Escolha ao menos um filamento.";
     if (isFailure) {
       if (!failureReason) return "Conte o que aconteceu.";
-      if (durationToMinutes(realTime) == null)
-        return "Informe o tempo até parar.";
+      if (!hasStoppedAt) return "Informe em quantos % a impressão parou.";
       return null;
     }
     if (recordUsages.some((u) => u.grams <= 0))
@@ -640,34 +653,70 @@ export function QueueCompleteForm({ entryId }: { entryId: string }) {
                 className="tabular-nums"
               />
             </Field>
-            <Field
-              label={isFailure ? "Gramas gastas até parar" : "Gramas reais"}
-              htmlFor="complete-grams"
-            >
-              <SuffixInput
-                id="complete-grams"
-                suffix="g"
-                placeholder={
-                  plannedGrams ? `${formatGrams(plannedGrams)} estimado` : "0"
-                }
-                value={realGrams}
-                onChange={(e) => setRealGrams(e.target.value)}
-                className="shadow-[inset_0_0_0_1px_var(--brand-700)]"
-              />
-            </Field>
-            <Field
-              label={isFailure ? "Tempo até parar" : "Tempo real"}
-              htmlFor="complete-time"
-            >
-              <DurationInput
-                id="complete-time"
-                label={isFailure ? "Tempo até parar" : "Tempo real"}
-                value={realTime}
-                onChange={setRealTime}
-                className="[&_input]:shadow-[inset_0_0_0_1px_var(--brand-700)]"
-              />
-            </Field>
+            {isFailure ? (
+              <>
+                <Field label="Parou em" htmlFor="complete-stopped-at">
+                  <SuffixInput
+                    id="complete-stopped-at"
+                    suffix="%"
+                    inputMode="numeric"
+                    placeholder="Ex.: 40"
+                    value={stoppedAt}
+                    onChange={(e) =>
+                      setStoppedAt(e.target.value.replace(/[^\d,]/g, ""))
+                    }
+                    className="shadow-[inset_0_0_0_1px_var(--brand-700)]"
+                  />
+                </Field>
+                <div className="flex min-w-0 flex-col gap-2">
+                  <Label>Perdido</Label>
+                  <div className="flex h-9 items-center text-[13px] tabular-nums">
+                    {hasStoppedAt ? (
+                      <span style={{ color: FAILURE_COLOR }}>
+                        {formatGrams(spentGrams)} ·{" "}
+                        {formatDuration(recordMinutes)}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">–</span>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <Field label="Gramas reais" htmlFor="complete-grams">
+                  <SuffixInput
+                    id="complete-grams"
+                    suffix="g"
+                    placeholder={
+                      plannedGrams
+                        ? `${formatGrams(plannedGrams)} estimado`
+                        : "0"
+                    }
+                    value={realGrams}
+                    onChange={(e) => setRealGrams(e.target.value)}
+                    className="shadow-[inset_0_0_0_1px_var(--brand-700)]"
+                  />
+                </Field>
+                <Field label="Tempo real" htmlFor="complete-time">
+                  <DurationInput
+                    id="complete-time"
+                    label="Tempo real"
+                    value={realTime}
+                    onChange={setRealTime}
+                    className="[&_input]:shadow-[inset_0_0_0_1px_var(--brand-700)]"
+                  />
+                </Field>
+              </>
+            )}
           </div>
+          {isFailure && (
+            <p className="-mt-1.5 text-[11.5px] text-muted-foreground/80">
+              Calculado sobre o estimado na fila ({formatGrams(plannedGrams)} e{" "}
+              {formatDuration(plannedMinutes)}): a porcentagem que imprimiu é o
+              filamento e o tempo perdidos.
+            </p>
+          )}
           {!isFailure && (
             <p className="-mt-1.5 text-[11.5px] text-muted-foreground/80">
               Gramas e tempo vêm do estimado na fila (
@@ -885,10 +934,14 @@ export function QueueCompleteForm({ entryId }: { entryId: string }) {
               ))}
               <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground/80">
                 <ScrollText className="size-3" aria-hidden="true" />
-                {realGrams.trim() &&
-                realGrams !== formatDecimalInput(plannedGrams, 1)
-                  ? "Gramas reais."
-                  : "Estimado. Atualiza com as gramas reais."}
+                {isFailure
+                  ? hasStoppedAt
+                    ? `${formatDecimal(stoppedPercent, 1)}% do estimado.`
+                    : "Informe em quantos % parou."
+                  : realGrams.trim() &&
+                      realGrams !== formatDecimalInput(plannedGrams, 1)
+                    ? "Gramas reais."
+                    : "Estimado. Atualiza com as gramas reais."}
               </span>
             </div>
           </>
