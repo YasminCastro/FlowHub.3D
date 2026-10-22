@@ -171,7 +171,7 @@ export default function PrintQueuePage() {
   const [sort, setSort] = useState<QueueSort>("manual");
   const [byFilament, setByFilament] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [showDone, setShowDone] = useState(true);
+  const [showDone, setShowDone] = useState(false);
   const [showAllDone, setShowAllDone] = useState(false);
   const { costs } = useCostContext();
 
