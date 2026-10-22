@@ -2,7 +2,6 @@ import { OmitType } from '@nestjs/mapped-types';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
-  ArrayMinSize,
   IsArray,
   IsIn,
   IsInt,
@@ -58,9 +57,9 @@ export class QueueEntryDto {
   @IsUUID()
   printerId!: string;
 
-  // Gramas do lote inteiro (todas as unidades).
+  // Gramas do lote inteiro (todas as unidades). Pode ficar vazio e ser
+  // preenchido depois; o orçamento só aparece com filamento e tempo.
   @IsArray()
-  @ArrayMinSize(1)
   @ArrayMaxSize(PRINT_MAX_FILAMENTS)
   @ValidateNested({ each: true })
   @Type(() => QueueFilamentDto)
@@ -71,8 +70,9 @@ export class QueueEntryDto {
   @Max(PRINT_MAX_UNITS)
   units!: number;
 
+  // 0: ainda não informado.
   @IsInt()
-  @Min(1)
+  @Min(0)
   @Max(PRINT_MAX_MINUTES)
   totalMinutes!: number;
 

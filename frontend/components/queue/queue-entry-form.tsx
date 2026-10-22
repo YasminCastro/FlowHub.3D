@@ -140,7 +140,9 @@ function draftFromEntry(entry: QueueEntry): Draft {
       ? entry.filaments.map((u) => usageDraftFrom(u.filament, u.grams))
       : [EMPTY_USAGE],
     units: String(entry.units),
-    time: minutesToDuration(entry.totalMinutes),
+    time: entry.totalMinutes
+      ? minutesToDuration(entry.totalMinutes)
+      : EMPTY_DURATION,
     printerId: entry.printer.id ?? "",
     customer: entry.customer ?? "",
     modelUrl: entry.modelUrl ?? "",
@@ -275,10 +277,10 @@ export function QueueEntryForm({ entryId }: { entryId?: string }) {
     if (draft.source === "item" && !item) return "Escolha a impressão.";
     if (draft.source === "new" && !name) return "Dê um nome para a peça.";
     if (!printer) return "Escolha a impressora.";
-    if (!usages.length) return "Escolha ao menos um filamento.";
+    // Filamento e tempo podem ficar para depois; escolhido o filamento,
+    // as gramas dele precisam vir junto.
     if (usages.some((u) => u.grams <= 0))
       return "Informe as gramas de cada filamento.";
-    if (minutes <= 0) return "Informe o tempo total.";
     return null;
   }
 
@@ -486,7 +488,7 @@ export function QueueEntryForm({ entryId }: { entryId?: string }) {
                   day: "2-digit",
                   month: "2-digit",
                 })}`
-              : undefined
+              : "opcional · dá para preencher depois"
           }
         >
           <div className="grid grid-cols-2 gap-3.5 md:grid-cols-[110px_minmax(150px,200px)]">
@@ -690,7 +692,7 @@ export function QueueEntryForm({ entryId }: { entryId?: string }) {
           <p className="text-[12px] text-muted-foreground">
             {costsError ??
               (costs
-                ? "Escolha o filamento e o tempo para ver o orçamento."
+                ? "Com filamento e tempo, o orçamento aparece aqui. Dá para preencher depois, editando o item."
                 : "Carregando custos...")}
           </p>
         )}

@@ -193,6 +193,13 @@ export function getEntryGrams(entry: Pick<QueueEntry, "filaments">) {
   return entry.filaments.reduce((sum, usage) => sum + usage.grams, 0);
 }
 
+// Filamento e tempo são opcionais ao adicionar; sem eles não há orçamento.
+export function hasEstimate(
+  entry: Pick<QueueEntry, "filaments" | "totalMinutes">,
+) {
+  return entry.filaments.length > 0 && entry.totalMinutes > 0;
+}
+
 export type QueueQuote = {
   breakdown: CostBreakdown;
   cost: number;
@@ -257,7 +264,10 @@ export function sortQueue(entries: QueueEntry[], view: QueueView) {
     view.sort === "manual"
       ? entries
       : [...entries].sort(
-          (a, b) => (a.totalMinutes - b.totalMinutes) * direction,
+          (a, b) =>
+            // Sem tempo informado, vai para o fim nas duas direções.
+            Number(!a.totalMinutes) - Number(!b.totalMinutes) ||
+            (a.totalMinutes - b.totalMinutes) * direction,
         );
   if (!view.byFilament) return sorted;
 

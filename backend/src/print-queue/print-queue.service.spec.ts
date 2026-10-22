@@ -211,6 +211,22 @@ describe('PrintQueueService', () => {
       expect(prisma.printQueueEntry.aggregate).not.toHaveBeenCalled();
     });
 
+    it('accepts an entry without filament and time yet', async () => {
+      prisma.printQueueEntry.aggregate.mockResolvedValue({
+        _max: { position: 0 },
+      });
+      prisma.filament.findMany.mockResolvedValue([]);
+
+      await service.createEntry(
+        userId,
+        entryDto({ filaments: [], totalMinutes: 0 }),
+      );
+
+      const data = dataOf(prisma.printQueueEntry.create);
+      expect(data.totalMinutes).toBe(0);
+      expect(data).toMatchObject({ filaments: { create: [] } });
+    });
+
     it("rejects someone else's printer", async () => {
       prisma.printer.findFirst.mockResolvedValue(null);
 

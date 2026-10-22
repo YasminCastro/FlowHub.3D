@@ -43,6 +43,7 @@ import {
   QueueEntry,
   QueueSort,
   RECENT_DONE_DAYS,
+  hasEstimate,
   isRecentlyDone,
   listQueue,
   countFilamentSwaps,
@@ -355,7 +356,8 @@ export default function PrintQueuePage() {
 
           {visible.map((entry) => {
             const position = pending.indexOf(entry) + 1;
-            const quote = costs ? quoteEntry(entry, costs) : null;
+            const quote =
+              costs && hasEstimate(entry) ? quoteEntry(entry, costs) : null;
             const photo = firstPhoto(
               items.find((item) => item.id === entry.printItem?.id),
             );
@@ -453,7 +455,9 @@ export default function PrintQueuePage() {
                   {entry.units} un.
                 </span>
                 <span className="text-[12.5px] text-foreground/70 tabular-nums">
-                  {formatDuration(entry.totalMinutes)}
+                  {entry.totalMinutes
+                    ? formatDuration(entry.totalMinutes)
+                    : "–"}
                 </span>
                 <span className="text-right text-[12.5px] text-foreground/70 tabular-nums">
                   {quote ? formatBRL(quote.cost) : "–"}

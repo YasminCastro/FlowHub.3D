@@ -52,6 +52,7 @@ import {
 import {
   QueueEntry,
   getEntryGrams,
+  hasEstimate,
   getQueueEntry,
   quoteEntry,
   removeFromQueue,
@@ -233,14 +234,17 @@ export default function QueueEntryPage() {
   }
 
   const grams = getEntryGrams(entry);
-  const quote = costs ? quoteEntry(entry, costs) : null;
+  const quote = costs && hasEstimate(entry) ? quoteEntry(entry, costs) : null;
 
   return (
     <div className="grid grid-cols-1 items-start gap-9 p-8 lg:grid-cols-[minmax(0,1fr)_300px]">
       <div className="flex min-w-0 flex-col gap-7">
         <div className="flex items-start gap-5">
           {photo ? (
-            <FramedPhoto photo={photo} className="h-24 w-28 shrink-0 rounded-md" />
+            <FramedPhoto
+              photo={photo}
+              className="h-24 w-28 shrink-0 rounded-md"
+            />
           ) : (
             <PhotoPlaceholder className="h-24 w-28 shrink-0 rounded-md" />
           )}
@@ -337,7 +341,9 @@ export default function QueueEntryPage() {
           <StatDivider />
           <Stat
             label="Tempo"
-            value={entry.totalMinutes ? formatDuration(entry.totalMinutes) : "–"}
+            value={
+              entry.totalMinutes ? formatDuration(entry.totalMinutes) : "–"
+            }
             size="lg"
           />
           <StatDivider />
@@ -384,7 +390,9 @@ export default function QueueEntryPage() {
               ))}
             </div>
           ) : (
-            <p className="text-[13px] text-muted-foreground">—</p>
+            <p className="text-[13px] text-muted-foreground">
+              Ainda não informado.
+            </p>
           )}
         </section>
 
@@ -438,7 +446,10 @@ export default function QueueEntryPage() {
           </>
         ) : (
           <p className="text-[12px] text-muted-foreground">
-            {costsError ?? "Carregando custos..."}
+            {costsError ??
+              (!hasEstimate(entry)
+                ? "Sem filamento e tempo ainda. Edite o item para ver o orçamento."
+                : "Carregando custos...")}
           </p>
         )}
       </aside>
