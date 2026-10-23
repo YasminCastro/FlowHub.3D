@@ -295,8 +295,14 @@ export default function PrintsPage() {
   const lost = summary && costs ? getLostCost(summary.failures, costs) : 0;
   const summaryStats = [
     { label: "Itens", value: String(summary?.itemCount ?? 0) },
-    { label: "Registros no mês", value: String(summary?.monthRecords ?? 0) },
-    { label: "Unidades no mês", value: String(summary?.monthUnits ?? 0) },
+    {
+      label: "Registros no último mês",
+      value: String(summary?.monthRecords ?? 0),
+    },
+    {
+      label: "Unidades no último mês",
+      value: String(summary?.monthUnits ?? 0),
+    },
     { label: "Perdido em falhas", value: formatBRL(lost), danger: lost > 0 },
   ];
 
@@ -373,9 +379,6 @@ export default function PrintsPage() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-4xl font-bold">Impressões</h1>
-          <p className="text-sm text-muted-foreground">
-            Um item por peça. Imprimir de novo adiciona um registro dentro dele.
-          </p>
         </div>
 
         <div className="flex items-center gap-2">

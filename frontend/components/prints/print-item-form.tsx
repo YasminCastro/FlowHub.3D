@@ -3,7 +3,14 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Combobox } from "@base-ui/react/combobox";
-import { Check, ChevronDown, ChevronRight, Plus, Upload, X } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Plus,
+  Upload,
+  X,
+} from "lucide-react";
 import { ReactNode, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -138,6 +145,81 @@ function CategoryCombobox({
                     style={{ background: c.color }}
                   />
                   {c.name}
+                  <Combobox.ItemIndicator className="absolute right-2 flex size-4 items-center justify-center">
+                    <Check className="size-4" />
+                  </Combobox.ItemIndicator>
+                </Combobox.Item>
+              )}
+            </Combobox.List>
+          </Combobox.Popup>
+        </Combobox.Positioner>
+      </Combobox.Portal>
+    </Combobox.Root>
+  );
+}
+
+// Peça de origem com busca: digita o nome para filtrar; o X volta a "nenhuma".
+function ParentCombobox({
+  items,
+  value,
+  onChange,
+}: {
+  items: PrintItem[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const selected = items.find((item) => item.id === value) ?? null;
+  return (
+    <Combobox.Root
+      items={items}
+      value={selected}
+      onValueChange={(item: PrintItem | null) =>
+        onChange(item?.id ?? NO_PARENT)
+      }
+      itemToStringLabel={(item: PrintItem) => item.name}
+      isItemEqualToValue={(a: PrintItem, b: PrintItem) => a.id === b.id}
+      autoHighlight
+    >
+      <div className="relative">
+        <Combobox.Input
+          aria-label="Derivado de"
+          placeholder="Digite o nome da peça de origem (escala, base diferente…)"
+          className="h-9 w-full min-w-0 rounded-md border border-input bg-card py-1 pr-14 pl-2.5 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-brand focus-visible:ring-3 focus-visible:ring-brand/50 md:text-sm"
+        />
+        {selected && (
+          <Combobox.Clear
+            aria-label="Remover peça de origem"
+            className="absolute top-0 right-7 flex h-9 w-7 items-center justify-center text-muted-foreground hover:text-foreground"
+          >
+            <X className="size-3.5" />
+          </Combobox.Clear>
+        )}
+        <Combobox.Trigger
+          aria-label="Abrir peças"
+          className="absolute top-0 right-0 flex h-9 w-8 items-center justify-center text-muted-foreground"
+        >
+          <ChevronDown className="size-4" />
+        </Combobox.Trigger>
+      </div>
+      <Combobox.Portal>
+        <Combobox.Positioner sideOffset={4} className="isolate z-50">
+          <Combobox.Popup className="max-h-[min(18rem,var(--available-height))] w-(--anchor-width) min-w-36 overflow-y-auto rounded-lg bg-popover p-1 scrollbar-nocturne text-popover-foreground shadow-md ring-1 ring-foreground/10">
+            <Combobox.Empty className="px-2 py-1.5 text-sm text-muted-foreground empty:hidden">
+              Nenhuma peça com esse nome.
+            </Combobox.Empty>
+            <Combobox.List>
+              {(item: PrintItem) => (
+                <Combobox.Item
+                  key={item.id}
+                  value={item}
+                  className="relative flex w-full cursor-default items-center gap-2 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground"
+                >
+                  <span className="truncate">{item.name}</span>
+                  {item.category && (
+                    <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">
+                      {item.category.name}
+                    </span>
+                  )}
                   <Combobox.ItemIndicator className="absolute right-2 flex size-4 items-center justify-center">
                     <Check className="size-4" />
                   </Combobox.ItemIndicator>
@@ -583,9 +665,6 @@ export function PrintItemForm() {
                   <span className="text-[11.5px]">Fotos da peça</span>
                 </button>
               )}
-              <span className="text-[11px] text-muted-foreground/80">
-                A primeira vira a capa.
-              </span>
             </div>
 
             <div className="flex min-w-0 flex-col gap-3.5">
@@ -633,34 +712,11 @@ export function PrintItemForm() {
                   </>
                 }
               >
-                <Select
+                <ParentCombobox
+                  items={items}
                   value={draft.parentId}
-                  onValueChange={(value) => set("parentId", value ?? NO_PARENT)}
-                >
-                  <SelectTrigger aria-label="Derivado de" className="w-full">
-                    <SelectValue>
-                      {(value: string) => {
-                        const p = items.find((item) => item.id === value);
-                        return p ? (
-                          p.name
-                        ) : (
-                          <span className="text-muted-foreground">
-                            Escolha se esta peça é uma versão de outra (escala,
-                            base diferente…)
-                          </span>
-                        );
-                      }}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NO_PARENT}>Nenhum</SelectItem>
-                    {items.map((item) => (
-                      <SelectItem key={item.id} value={item.id}>
-                        {item.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  onChange={(id) => set("parentId", id)}
+                />
               </Field>
             </div>
           </div>
@@ -668,7 +724,7 @@ export function PrintItemForm() {
 
         <Separator />
 
-        <Step n={2} title="Primeira impressão" hint="vira o registro padrão">
+        <Step n={2} title="Primeira impressão">
           <div className="grid grid-cols-2 gap-3.5 md:grid-cols-[1fr_1fr_minmax(150px,1fr)_110px]">
             <Field label="Data" htmlFor="print-date">
               <Input
