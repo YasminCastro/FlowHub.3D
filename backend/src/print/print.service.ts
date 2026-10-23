@@ -15,6 +15,10 @@ import {
   PrintFilamentUsageDto,
   PrintItemDto,
   PrintRecordDto,
+  PRINT_RECENT_FAILURE_DAYS,
+  PrintItemsPageQueryDto,
+  PrintPageSort,
+  PrintSummaryQueryDto,
 } from './dto/print.js';
 import { PrintPhotoStorage, printPhotoUrl } from './print-photo-storage.js';
 import { detectImageExtension } from '../journal/journal-photo-storage.js';
@@ -47,6 +51,16 @@ const itemInclude = {
     orderBy: [{ printedAt: 'desc' }, { createdAt: 'desc' }],
   },
 } satisfies Prisma.PrintItemInclude;
+
+// ORDER BY da lista paginada (aliases do SQL em getItemsPage). O id no fim
+// desempata, para a mesma peça não aparecer em duas páginas.
+const PRINT_PAGE_ORDER: Record<PrintPageSort, Prisma.Sql> = {
+  recent: Prisma.sql`s."lastPrintedAt" DESC NULLS LAST, i."createdAt" DESC, i.id`,
+  oldest: Prisma.sql`s."lastPrintedAt" ASC NULLS LAST, i."createdAt" ASC, i.id`,
+  units: Prisma.sql`s.units DESC, s."lastPrintedAt" DESC NULLS LAST, i.id`,
+  name: Prisma.sql`lower(i.name) ASC, i.id`,
+  'name-desc': Prisma.sql`lower(i.name) DESC, i.id`,
+};
 
 type ItemWithRelations = Prisma.PrintItemGetPayload<{
   include: typeof itemInclude;
@@ -514,6 +528,115 @@ export class PrintService {
     });
 
     return items.map((item) => this.toResponse(item));
+  }
+
+  // Lista da tela de Impressões: filtra, ordena e pagina no banco. A ordem
+  // depende dos registros (última impressão, unidades), então os ids da página
+  // saem de um SQL e as peças completas vêm depois, na mesma ordem.
+  async getItemsPage(userId: string, query: PrintItemsPageQueryDto) {
+    const conditions = [Prisma.sql`i."userId" = ${userId}`];
+    const search = query.search?.trim();
+    if (search) {
+      const escaped = search.replace(/[\\%_]/g, (c) => `\\${c}`);
+      conditions.push(Prisma.sql`i.name ILIKE ${`%${escaped}%`}`);
+    }
+    if (query.categoryId) {
+      conditions.push(Prisma.sql`i."categoryId" = ${query.categoryId}`);
+    }
+    if (query.recentFailure) {
+      const since = new Date(
+        Date.now() - PRINT_RECENT_FAILURE_DAYS * 86_400_000,
+      );
+      conditions.push(Prisma.sql`EXISTS (
+        SELECT 1 FROM "PrintRecord" f
+        WHERE f."itemId" = i.id AND f.outcome = 'FAILURE'
+          AND f."printedAt" >= ${since}
+      )`);
+    }
+    const where = Prisma.join(conditions, ' AND ');
+
+    const [{ total }] = await this.prisma.$queryRaw<{ total: number }[]>`
+      SELECT COUNT(*)::int AS total FROM "PrintItem" i WHERE ${where}
+    `;
+    const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
+    // Página que deixou de existir (filtro mudou, peça excluída) vira a última.
+    const page = Math.min(query.page, totalPages);
+
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT i.id
+      FROM "PrintItem" i
+      LEFT JOIN LATERAL (
+        SELECT MAX(r."printedAt") AS "lastPrintedAt",
+               COALESCE(SUM(r.units) FILTER (WHERE r.outcome = 'SUCCESS'), 0)
+                 AS units
+        FROM "PrintRecord" r
+        WHERE r."itemId" = i.id
+      ) s ON true
+      WHERE ${where}
+      ORDER BY ${PRINT_PAGE_ORDER[query.sort]}
+      LIMIT ${query.pageSize} OFFSET ${(page - 1) * query.pageSize}
+    `;
+
+    const ids = rows.map((row) => row.id);
+    const items = await this.prisma.printItem.findMany({
+      where: { id: { in: ids } },
+      omit: { userId: true },
+      include: itemInclude,
+    });
+    const byId = new Map(items.map((item) => [item.id, item]));
+
+    return {
+      items: ids.flatMap((id) => {
+        const item = byId.get(id);
+        return item ? [this.toResponse(item)] : [];
+      }),
+      total,
+      page,
+      pageSize: query.pageSize,
+      totalPages,
+    };
+  }
+
+  // Números do topo da tela e as categorias dos filtros, sobre todas as peças
+  // (não só a página). Das falhas vão os registros inteiros: o custo perdido
+  // é calculado na tela, com os custos do usuário.
+  async getSummary(userId: string, { monthStart }: PrintSummaryQueryDto) {
+    const ownRecords = {
+      item: { userId },
+    } satisfies Prisma.PrintRecordWhereInput;
+    const since = new Date(monthStart);
+    const [itemCount, monthRecords, monthUnits, failures, categories] =
+      await Promise.all([
+        this.prisma.printItem.count({ where: { userId } }),
+        this.prisma.printRecord.count({
+          where: { ...ownRecords, printedAt: { gte: since } },
+        }),
+        this.prisma.printRecord.aggregate({
+          where: {
+            ...ownRecords,
+            printedAt: { gte: since },
+            outcome: 'SUCCESS',
+          },
+          _sum: { units: true },
+        }),
+        this.prisma.printRecord.findMany({
+          where: { ...ownRecords, outcome: 'FAILURE' },
+          include: recordInclude,
+        }),
+        this.prisma.category.findMany({
+          where: { userId, printItems: { some: {} } },
+          select: { id: true, name: true, color: true },
+          orderBy: { name: 'asc' },
+        }),
+      ]);
+
+    return {
+      itemCount,
+      monthRecords,
+      monthUnits: monthUnits._sum.units ?? 0,
+      failures: failures.map((record) => this.toRecordResponse(record)),
+      categories,
+    };
   }
 
   async getItemById(itemId: string, userId: string) {

@@ -28,19 +28,24 @@ describe('PrintService', () => {
       findMany: AsyncMock;
       create: AsyncMock;
       delete: AsyncMock;
+      count: AsyncMock;
     };
     printRecord: {
       updateMany: AsyncMock;
       create: AsyncMock;
       update: AsyncMock;
       delete: AsyncMock;
+      count: AsyncMock;
+      aggregate: AsyncMock;
+      findMany: AsyncMock;
     };
     printPhoto: { createMany: AsyncMock; delete: AsyncMock };
     printer: { findFirst: AsyncMock };
     filament: { findMany: AsyncMock };
     extraItem: { findMany: AsyncMock };
-    category: { findFirst: AsyncMock };
+    category: { findFirst: AsyncMock; findMany: AsyncMock };
     $transaction: AsyncMock;
+    $queryRaw: AsyncMock;
   };
   let storage: { save: AsyncMock; remove: AsyncMock };
 
@@ -177,18 +182,23 @@ describe('PrintService', () => {
         findMany: jest.fn(),
         create: jest.fn(),
         delete: jest.fn(),
+        count: jest.fn(),
       },
       printRecord: {
         updateMany: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
         delete: jest.fn(),
+        count: jest.fn(),
+        aggregate: jest.fn(),
+        findMany: jest.fn(),
       },
       printPhoto: { createMany: jest.fn(), delete: jest.fn() },
       printer: { findFirst: jest.fn() },
       filament: { findMany: jest.fn() },
       extraItem: { findMany: jest.fn() },
-      category: { findFirst: jest.fn() },
+      category: { findFirst: jest.fn(), findMany: jest.fn() },
+      $queryRaw: jest.fn(),
       $transaction: jest.fn((operations: unknown) =>
         Promise.all(operations as Promise<unknown>[]),
       ),
@@ -743,6 +753,110 @@ describe('PrintService', () => {
         data: { isDefault: true },
       });
       expect(storage.remove).toHaveBeenCalledWith('a.png');
+    });
+  });
+
+  describe('getItemsPage', () => {
+    const query = { page: 1, pageSize: 2, sort: 'recent' as const };
+    // Texto e valores do SQL passado na chamada n do $queryRaw.
+    function sqlOf(call: number) {
+      const [strings, ...values] = prisma.$queryRaw.mock.calls[call] as [
+        TemplateStringsArray,
+        ...unknown[],
+      ];
+      return Prisma.sql(strings, ...values);
+    }
+
+    it('devolve as peças na ordem do SQL, com o total', async () => {
+      prisma.$queryRaw
+        .mockResolvedValueOnce([{ total: 3 }])
+        .mockResolvedValueOnce([{ id: 'item-b' }, { id: 'item-a' }]);
+      prisma.printItem.findMany.mockResolvedValue([
+        { ...itemRow(), id: 'item-a' },
+        { ...itemRow(), id: 'item-b' },
+      ]);
+
+      const result = await service.getItemsPage(userId, query);
+
+      expect(result.items.map((item) => item.id)).toEqual(['item-b', 'item-a']);
+      expect(result).toMatchObject({
+        total: 3,
+        page: 1,
+        pageSize: 2,
+        totalPages: 2,
+      });
+      expect(sqlOf(1).values).toEqual([userId, 2, 0]);
+      expect(sqlOf(1).sql).toContain('"lastPrintedAt" DESC');
+    });
+
+    it('página além do fim vira a última', async () => {
+      prisma.$queryRaw
+        .mockResolvedValueOnce([{ total: 3 }])
+        .mockResolvedValueOnce([]);
+      prisma.printItem.findMany.mockResolvedValue([]);
+
+      const result = await service.getItemsPage(userId, { ...query, page: 9 });
+
+      expect(result.page).toBe(2);
+      // LIMIT 2 OFFSET 2.
+      expect(sqlOf(1).values.slice(-2)).toEqual([2, 2]);
+    });
+
+    it('aplica busca (escapando curingas), categoria e falha recente', async () => {
+      prisma.$queryRaw
+        .mockResolvedValueOnce([{ total: 0 }])
+        .mockResolvedValueOnce([]);
+      prisma.printItem.findMany.mockResolvedValue([]);
+
+      await service.getItemsPage(userId, {
+        ...query,
+        search: ' 50%_off ',
+        categoryId,
+        recentFailure: true,
+        sort: 'name-desc',
+      });
+
+      const count = sqlOf(0);
+      expect(count.values.slice(0, 3)).toEqual([
+        userId,
+        '%50\\%\\_off%',
+        categoryId,
+      ]);
+      expect(count.values[3]).toBeInstanceOf(Date);
+      expect(count.sql).toContain("f.outcome = 'FAILURE'");
+      expect(sqlOf(1).sql).toContain('lower(i.name) DESC');
+    });
+  });
+
+  describe('getSummary', () => {
+    it('conta o mês a partir do início informado e devolve as falhas', async () => {
+      prisma.printItem.count.mockResolvedValue(5);
+      prisma.printRecord.count.mockResolvedValue(4);
+      prisma.printRecord.aggregate.mockResolvedValue({ _sum: { units: null } });
+      prisma.printRecord.findMany.mockResolvedValue([
+        recordRow({ id: 'rec-f', outcome: 'FAILURE', isDefault: false }),
+      ]);
+      prisma.category.findMany.mockResolvedValue([
+        { id: categoryId, name: 'Chaveiros', color: '#e08a2e' },
+      ]);
+
+      const result = await service.getSummary(userId, {
+        monthStart: '2026-10-01T03:00:00.000Z',
+      });
+
+      expect(result).toMatchObject({
+        itemCount: 5,
+        monthRecords: 4,
+        monthUnits: 0,
+        categories: [{ id: categoryId }],
+      });
+      expect(result.failures.map((r) => r.id)).toEqual(['rec-f']);
+      expect(prisma.printRecord.count).toHaveBeenCalledWith({
+        where: {
+          item: { userId },
+          printedAt: { gte: new Date('2026-10-01T03:00:00.000Z') },
+        },
+      });
     });
   });
 

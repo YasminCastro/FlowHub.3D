@@ -282,6 +282,63 @@ export async function listPrintItems() {
   return items.map(fromItemResponse);
 }
 
+export type PrintPageSort =
+  "recent" | "oldest" | "units" | "name" | "name-desc";
+
+export type PrintItemsPageQuery = {
+  page: number;
+  pageSize: number;
+  sort: PrintPageSort;
+  search?: string;
+  categoryId?: string;
+  recentFailure?: boolean;
+};
+
+export type PrintItemsPage = {
+  items: PrintItem[];
+  total: number;
+  // A pedida, ou a última se ela não existe mais.
+  page: number;
+  pageSize: number;
+  totalPages: number;
+};
+
+// Lista da tela de Impressões: filtro, ordem e paginação feitos no servidor.
+export async function listPrintItemsPage(query: PrintItemsPageQuery) {
+  const params = new URLSearchParams({
+    page: String(query.page),
+    pageSize: String(query.pageSize),
+    sort: query.sort,
+  });
+  if (query.search?.trim()) params.set("search", query.search.trim());
+  if (query.categoryId) params.set("categoryId", query.categoryId);
+  if (query.recentFailure) params.set("recentFailure", "true");
+  const data = (await apiFetch(`/print/page?${params}`)) as Omit<
+    PrintItemsPage,
+    "items"
+  > & { items: PrintItemResponse[] };
+  return { ...data, items: data.items.map(fromItemResponse) };
+}
+
+export type PrintSummary = {
+  itemCount: number;
+  monthRecords: number;
+  monthUnits: number;
+  // Só os registros com falha, para o custo perdido.
+  failures: PrintRecord[];
+  // Categorias que têm alguma peça.
+  categories: PrintCategory[];
+};
+
+// Números do topo da tela, sobre todas as peças. O mês é o do navegador.
+export async function getPrintSummary(now = new Date()) {
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const data = (await apiFetch(
+    `/print/summary?monthStart=${encodeURIComponent(monthStart.toISOString())}`,
+  )) as Omit<PrintSummary, "failures"> & { failures: PrintRecordResponse[] };
+  return { ...data, failures: data.failures.map(fromRecordResponse) };
+}
+
 export async function getPrintItem(id: string) {
   return fromItemResponse(
     (await apiFetch(`/print/${id}`)) as PrintItemResponse,

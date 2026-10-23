@@ -3,6 +3,8 @@
 import Link from "next/link";
 import {
   ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
   ImagesIcon,
   Plus,
   Search,
@@ -29,23 +31,28 @@ import { useCostContext } from "@/hooks/use-cost-context";
 import { useStoredState } from "@/hooks/use-stored-state";
 import { ApiError } from "@/lib/api/auth";
 import {
-  PrintItem,
-  getItemStats,
+  PrintItemsPage,
+  PrintPageSort,
+  PrintSummary,
   getLostCost,
-  listPrintItems,
+  getPrintSummary,
+  listPrintItemsPage,
 } from "@/lib/api/print";
 import { cn, formatBRL } from "@/lib/utils";
 
-type SortOption = "recent" | "units" | "name";
-
-const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+const SORT_OPTIONS: { value: PrintPageSort; label: string }[] = [
   { value: "recent", label: "Mais recentes" },
+  { value: "oldest", label: "Mais antigas" },
   { value: "units", label: "Mais impressas" },
   { value: "name", label: "Nome (A–Z)" },
+  { value: "name-desc", label: "Nome (Z–A)" },
 ];
 
 const ALL_CATEGORIES = "all";
-const RECENT_FAILURE_DAYS = 30;
+// Múltiplo de 2, 3 e 4: fecha as linhas da grade em qualquer largura.
+const PAGE_SIZE = 24;
+// Espera parar de digitar antes de buscar no servidor.
+const SEARCH_DELAY_MS = 300;
 
 function FilterChip({
   selected,
@@ -73,42 +80,92 @@ function FilterChip({
   );
 }
 
-function compareItems(a: PrintItem, b: PrintItem, sort: SortOption) {
-  const sa = getItemStats(a);
-  const sb = getItemStats(b);
-  const byDate = (sb.lastPrintedAt ?? "").localeCompare(sa.lastPrintedAt ?? "");
-  switch (sort) {
-    case "units":
-      return sb.units - sa.units || byDate;
-    case "name":
-      return a.name.localeCompare(b.name, "pt-BR");
-    default:
-      return byDate;
+// Primeira, última e as vizinhas da atual; o resto vira "…".
+function pageNumbers(page: number, totalPages: number) {
+  const pages: (number | "gap")[] = [];
+  for (let n = 1; n <= totalPages; n++) {
+    if (n === 1 || n === totalPages || Math.abs(n - page) <= 1) {
+      pages.push(n);
+    } else if (pages.at(-1) !== "gap") {
+      pages.push("gap");
+    }
   }
+  return pages;
 }
 
-function isThisMonth(iso: string, now: Date) {
-  const date = new Date(iso);
+function Pagination({
+  result,
+  onPageChange,
+}: {
+  result: PrintItemsPage;
+  onPageChange: (page: number) => void;
+}) {
+  const { page, pageSize, total, totalPages } = result;
+  const first = (page - 1) * pageSize + 1;
+  const last = Math.min(page * pageSize, total);
+
   return (
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth()
+    <nav
+      aria-label="Paginação das impressões"
+      className="flex flex-wrap items-center justify-between gap-3"
+    >
+      <p className="text-xs text-muted-foreground">
+        {first}–{last} de {total}
+      </p>
+      {totalPages > 1 && (
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="icon-sm"
+            disabled={page === 1}
+            onClick={() => onPageChange(page - 1)}
+            aria-label="Página anterior"
+          >
+            <ChevronLeft />
+          </Button>
+          {pageNumbers(page, totalPages).map((n, index) =>
+            n === "gap" ? (
+              <span
+                key={`gap-${index}`}
+                className="px-1 text-xs text-muted-foreground"
+                aria-hidden="true"
+              >
+                …
+              </span>
+            ) : (
+              <Button
+                key={n}
+                variant={n === page ? "default" : "ghost"}
+                size="icon-sm"
+                aria-current={n === page ? "page" : undefined}
+                aria-label={`Página ${n}`}
+                onClick={() => onPageChange(n)}
+              >
+                {n}
+              </Button>
+            ),
+          )}
+          <Button
+            variant="outline"
+            size="icon-sm"
+            disabled={page === totalPages}
+            onClick={() => onPageChange(page + 1)}
+            aria-label="Próxima página"
+          >
+            <ChevronRight />
+          </Button>
+        </div>
+      )}
+    </nav>
   );
 }
 
-function hasRecentFailure(item: PrintItem, now: Date) {
-  const last = getItemStats(item).lastFailureAt;
-  if (!last) return false;
-  const days = (now.getTime() - new Date(last).getTime()) / 86_400_000;
-  return days <= RECENT_FAILURE_DAYS;
+function errorMessage(err: unknown, fallback: string) {
+  return err instanceof ApiError ? err.message : fallback;
 }
 
 export default function PrintsPage() {
-  const [items, setItems] = useState<PrintItem[]>([]);
-  const [isLoadingItems, setIsLoadingItems] = useState(true);
-  const [itemsError, setItemsError] = useState<string | null>(null);
   const { costs, loadError: costsError } = useCostContext();
-  const loadError = itemsError ?? costsError;
-  const isLoading = isLoadingItems || (!costs && !loadError);
   // Os filtros ficam salvos no navegador: voltam iguais ao atualizar a página.
   const [search, setSearch] = useStoredState("impressoes:search", "");
   const [storedCategory, setCategoryFilter] = useStoredState(
@@ -119,36 +176,93 @@ export default function PrintsPage() {
     "impressoes:recentFailure",
     false,
   );
-  const [storedSort, setSort] = useStoredState<SortOption>(
+  const [storedSort, setSort] = useStoredState<PrintPageSort>(
     "impressoes:sort",
     "recent",
   );
+  const [page, setPage] = useStoredState("impressoes:page", 1);
   // Valor salvo que deixou de valer (opção removida) volta ao padrão.
   const sort = SORT_OPTIONS.some((option) => option.value === storedSort)
     ? storedSort
     : "recent";
 
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), SEARCH_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const [summary, setSummary] = useState<PrintSummary | null>(null);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
   useEffect(() => {
     let ignore = false;
-    listPrintItems()
+    getPrintSummary()
       .then((result) => {
-        if (!ignore) setItems(result);
+        if (!ignore) setSummary(result);
       })
       .catch((err) => {
-        if (ignore) return;
-        setItemsError(
-          err instanceof ApiError
-            ? err.message
-            : "Não foi possível carregar as impressões.",
-        );
-      })
-      .finally(() => {
-        if (!ignore) setIsLoadingItems(false);
+        if (!ignore) {
+          setSummaryError(
+            errorMessage(err, "Não foi possível carregar as impressões."),
+          );
+        }
       });
     return () => {
       ignore = true;
     };
   }, []);
+
+  // Categoria salva que não tem mais peças (ou foi excluída) mostra todas.
+  const categories = summary?.categories ?? [];
+  const categoryFilter =
+    !summary || categories.some((c) => c.id === storedCategory)
+      ? storedCategory
+      : ALL_CATEGORIES;
+
+  // A resposta guarda a consulta que a gerou: enquanto não bate com os filtros
+  // atuais, a grade mostra a anterior esmaecida.
+  const queryKey = JSON.stringify([
+    page,
+    sort,
+    debouncedSearch.trim(),
+    categoryFilter,
+    onlyRecentFailure,
+  ]);
+  const [loaded, setLoaded] = useState<{
+    key: string;
+    result?: PrintItemsPage;
+    error?: string;
+  } | null>(null);
+  useEffect(() => {
+    let ignore = false;
+    listPrintItemsPage({
+      page,
+      pageSize: PAGE_SIZE,
+      sort,
+      search: debouncedSearch,
+      categoryId:
+        categoryFilter === ALL_CATEGORIES ? undefined : categoryFilter,
+      recentFailure: onlyRecentFailure,
+    })
+      .then((result) => {
+        if (ignore) return;
+        setLoaded({ key: queryKey, result });
+        // A página pedida deixou de existir: o servidor mandou a última.
+        if (result.page !== page) setPage(result.page);
+      })
+      .catch((err) => {
+        if (ignore) return;
+        setLoaded({
+          key: queryKey,
+          error: errorMessage(err, "Não foi possível carregar as impressões."),
+        });
+      });
+    return () => {
+      ignore = true;
+    };
+    // queryKey resume todas as entradas da consulta.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryKey]);
 
   usePageHeaderAction(
     <Button
@@ -161,42 +275,28 @@ export default function PrintsPage() {
     </Button>,
   );
 
-  const now = new Date();
-  const categories = [
-    ...new Map(
-      items.flatMap((item) =>
-        item.category ? [[item.category.id, item.category] as const] : [],
-      ),
-    ).values(),
-  ].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-  // Categoria salva que não tem mais peças (ou foi excluída) mostra todas.
-  const categoryFilter =
-    isLoadingItems || categories.some((c) => c.id === storedCategory)
-      ? storedCategory
-      : ALL_CATEGORIES;
+  const result = loaded?.result;
+  const isFetching =
+    loaded?.key !== queryKey || search.trim() !== debouncedSearch.trim();
+  const loadError = summaryError ?? costsError ?? loaded?.error ?? null;
+  const isLoading = (!result || !summary || !costs) && !loadError;
 
-  const query = search.trim().toLowerCase();
-  const visibleItems = items
-    .filter((item) => !query || item.name.toLowerCase().includes(query))
-    .filter(
-      (item) =>
-        categoryFilter === ALL_CATEGORIES ||
-        item.category?.id === categoryFilter,
-    )
-    .filter((item) => !onlyRecentFailure || hasRecentFailure(item, now))
-    .sort((a, b) => compareItems(a, b, sort));
+  // Mudar qualquer filtro volta para a primeira página.
+  function changeFilter(apply: () => void) {
+    apply();
+    setPage(1);
+  }
 
-  const records = items.flatMap((item) => item.records);
-  const monthRecords = records.filter((r) => isThisMonth(r.printedAt, now));
-  const monthUnits = monthRecords
-    .filter((r) => r.outcome === "SUCCESS")
-    .reduce((sum, r) => sum + r.units, 0);
-  const lost = costs ? getLostCost(records, costs) : 0;
+  function goToPage(next: number) {
+    setPage(next);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
+  const lost = summary && costs ? getLostCost(summary.failures, costs) : 0;
   const summaryStats = [
-    { label: "Itens", value: String(items.length) },
-    { label: "Registros no mês", value: String(monthRecords.length) },
-    { label: "Unidades no mês", value: String(monthUnits) },
+    { label: "Itens", value: String(summary?.itemCount ?? 0) },
+    { label: "Registros no mês", value: String(summary?.monthRecords ?? 0) },
+    { label: "Unidades no mês", value: String(summary?.monthUnits ?? 0) },
     { label: "Perdido em falhas", value: formatBRL(lost), danger: lost > 0 },
   ];
 
@@ -211,7 +311,7 @@ export default function PrintsPage() {
       );
     }
 
-    if (loadError || !costs) {
+    if (loadError || !costs || !summary || !result) {
       return (
         <p role="alert" className="text-[12.5px] text-destructive">
           {loadError}
@@ -219,7 +319,7 @@ export default function PrintsPage() {
       );
     }
 
-    if (items.length === 0) {
+    if (summary.itemCount === 0) {
       return (
         <div className="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground">
           <ImagesIcon className="size-6" aria-hidden="true" />
@@ -239,7 +339,7 @@ export default function PrintsPage() {
       );
     }
 
-    if (visibleItems.length === 0) {
+    if (result.items.length === 0) {
       return (
         <div className="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground">
           <Search className="size-6" aria-hidden="true" />
@@ -251,10 +351,19 @@ export default function PrintsPage() {
     }
 
     return (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {visibleItems.map((item) => (
-          <PrintCard key={item.id} item={item} costs={costs} />
-        ))}
+      <div
+        aria-busy={isFetching}
+        className={cn(
+          "flex flex-col gap-4 transition-opacity",
+          isFetching && "opacity-60",
+        )}
+      >
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {result.items.map((item) => (
+            <PrintCard key={item.id} item={item} costs={costs} />
+          ))}
+        </div>
+        <Pagination result={result} onPageChange={goToPage} />
       </div>
     );
   }
@@ -277,7 +386,7 @@ export default function PrintsPage() {
             />
             <Input
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => changeFilter(() => setSearch(e.target.value))}
               placeholder="Buscar impressão..."
               aria-label="Buscar impressão pelo nome"
               className="w-60 pl-8"
@@ -297,7 +406,9 @@ export default function PrintsPage() {
                 <DropdownMenuLabel>Ordenar por</DropdownMenuLabel>
                 <DropdownMenuRadioGroup
                   value={sort}
-                  onValueChange={(value) => setSort(value as SortOption)}
+                  onValueChange={(value) =>
+                    changeFilter(() => setSort(value as PrintPageSort))
+                  }
                 >
                   {SORT_OPTIONS.map((option) => (
                     <DropdownMenuRadioItem
@@ -321,7 +432,7 @@ export default function PrintsPage() {
             {index > 0 && <StatDivider />}
             <Stat
               label={stat.label}
-              value={isLoading ? "–" : stat.value}
+              value={!summary || !costs ? "–" : stat.value}
               size="lg"
               danger={stat.danger}
             />
@@ -332,7 +443,7 @@ export default function PrintsPage() {
       <div className="flex flex-wrap items-center gap-1.75">
         <FilterChip
           selected={categoryFilter === ALL_CATEGORIES}
-          onClick={() => setCategoryFilter(ALL_CATEGORIES)}
+          onClick={() => changeFilter(() => setCategoryFilter(ALL_CATEGORIES))}
         >
           Todas
         </FilterChip>
@@ -341,8 +452,10 @@ export default function PrintsPage() {
             key={category.id}
             selected={categoryFilter === category.id}
             onClick={() =>
-              setCategoryFilter((prev) =>
-                prev === category.id ? ALL_CATEGORIES : category.id,
+              changeFilter(() =>
+                setCategoryFilter((prev) =>
+                  prev === category.id ? ALL_CATEGORIES : category.id,
+                ),
               )
             }
           >
@@ -352,7 +465,9 @@ export default function PrintsPage() {
         <span className="mx-1 h-4.5 w-px bg-border" aria-hidden="true" />
         <FilterChip
           selected={onlyRecentFailure}
-          onClick={() => setOnlyRecentFailure((prev) => !prev)}
+          onClick={() =>
+            changeFilter(() => setOnlyRecentFailure((prev) => !prev))
+          }
         >
           <TriangleAlert className="size-3.25" aria-hidden="true" />
           Com falha recente

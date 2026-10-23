@@ -6,7 +6,9 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UploadedFiles,
+  ValidationPipe,
   UseInterceptors,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
@@ -19,9 +21,19 @@ import {
   PRINT_MAX_PHOTOS,
   PRINT_PHOTO_MAX_BYTES,
   PrintItemDto,
+  PrintItemsPageQueryDto,
+  PrintSummaryQueryDto,
   UpdatePrintPhotoDto,
   UpdatePrintRecordDto,
 } from './dto/print.js';
+
+// A query string chega como texto: este pipe converte números e booleanos
+// (o global só valida).
+const QUERY_PIPE = new ValidationPipe({
+  transform: true,
+  whitelist: true,
+  forbidNonWhitelisted: true,
+});
 
 @Controller('print')
 export class PrintController {
@@ -38,6 +50,23 @@ export class PrintController {
   @Get()
   getAll(@CurrentUser('userId') currentUserId: string) {
     return this.printService.getAllItems(currentUserId);
+  }
+
+  // Antes de ':id' para "page" e "summary" não serem lidos como id.
+  @Get('page')
+  getPage(
+    @CurrentUser('userId') currentUserId: string,
+    @Query(QUERY_PIPE) query: PrintItemsPageQueryDto,
+  ) {
+    return this.printService.getItemsPage(currentUserId, query);
+  }
+
+  @Get('summary')
+  getSummary(
+    @CurrentUser('userId') currentUserId: string,
+    @Query(QUERY_PIPE) query: PrintSummaryQueryDto,
+  ) {
+    return this.printService.getSummary(currentUserId, query);
   }
 
   @Get(':id')

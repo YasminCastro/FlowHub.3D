@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -223,4 +223,55 @@ export class PrintItemDto {
   @ValidateNested()
   @Type(() => PrintRecordDto)
   firstRecord!: PrintRecordDto;
+}
+
+export const PRINT_PAGE_SORTS = [
+  'recent',
+  'oldest',
+  'units',
+  'name',
+  'name-desc',
+] as const;
+export type PrintPageSort = (typeof PRINT_PAGE_SORTS)[number];
+export const PRINT_PAGE_MAX_SIZE = 100;
+// "Com falha recente": alguma falha nos últimos 30 dias.
+export const PRINT_RECENT_FAILURE_DAYS = 30;
+
+// Query string da lista paginada: chega tudo como texto, por isso os @Type e o
+// @Transform (o controller usa um ValidationPipe com transform).
+export class PrintItemsPageQueryDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page: number = 1;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(PRINT_PAGE_MAX_SIZE)
+  pageSize: number = 24;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(PRINT_NAME_MAX_LENGTH)
+  search?: string;
+
+  @IsOptional()
+  @IsUUID()
+  categoryId?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  recentFailure?: boolean;
+
+  @IsOptional()
+  @IsIn(PRINT_PAGE_SORTS)
+  sort: PrintPageSort = 'recent';
+}
+
+// Início do mês no fuso de quem pede: o servidor não sabe qual é.
+export class PrintSummaryQueryDto {
+  @IsDateString()
+  monthStart!: string;
 }
