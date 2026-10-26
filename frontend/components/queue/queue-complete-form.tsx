@@ -62,6 +62,7 @@ import {
   usePageHeaderBreadcrumb,
 } from "@/contexts/page-header-action-context";
 import { useCostContext } from "@/hooks/use-cost-context";
+import { useLastPrinter } from "@/hooks/use-last-printer";
 import { ApiError } from "@/lib/api/auth";
 import { isNotFoundError } from "@/lib/api/client";
 import { Category, listCategories } from "@/lib/api/category";
@@ -114,6 +115,7 @@ export function QueueCompleteForm({ entryId }: { entryId: string }) {
   const [filaments, setFilaments] = useState<PrintFilament[]>([]);
   const { costs } = useCostContext();
   const printers = costs?.printers ?? [];
+  const { rememberPrinter } = useLastPrinter();
 
   // Onde registrar.
   const [target, setTarget] = useState<Target>("item");
@@ -348,6 +350,7 @@ export function QueueCompleteForm({ entryId }: { entryId: string }) {
         { makeDefault: makeDefault && !isFailure },
         files,
       );
+      rememberPrinter(recordPrinter.id);
       router.push(
         saved && photoError
           ? `/dashboard/impressoes/${saved.id}?fotos=erro`

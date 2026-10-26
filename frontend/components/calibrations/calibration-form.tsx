@@ -50,6 +50,7 @@ import {
   usePageHeaderAction,
   usePageHeaderBreadcrumb,
 } from "@/contexts/page-header-action-context";
+import { useLastPrinter } from "@/hooks/use-last-printer";
 import {
   Calibration,
   CalibrationFilament,
@@ -474,6 +475,7 @@ export function CalibrationForm({
   const [filaments, setFilaments] = useState<CalibrationFilament[]>([]);
   const [printers, setPrinters] = useState<CalibrationPrinter[]>([]);
   const [existing, setExisting] = useState<Calibration[]>([]);
+  const { lastPrinterId, rememberPrinter } = useLastPrinter();
 
   const form = useForm<CalibrationFormValues>({
     resolver: zodResolver(calibrationFormSchema),
@@ -491,12 +493,18 @@ export function CalibrationForm({
       setFilaments(fils);
       setPrinters(prns);
       setExisting(cals);
-      // Uma impressora só: já vem escolhida.
-      if (!form.getValues("printerId") && prns.length === 1) {
-        form.setValue("printerId", prns[0].id);
-      }
     });
   }, [form]);
+
+  // Sem impressora definida, já vem escolhida a última usada (ou a única).
+  useEffect(() => {
+    if (form.getValues("printerId")) return;
+    const pick =
+      printers.length === 1
+        ? printers[0]
+        : printers.find((p) => p.id === lastPrinterId);
+    if (pick) form.setValue("printerId", pick.id);
+  }, [form, printers, lastPrinterId]);
 
   const isSubmitting = form.formState.isSubmitting;
 
@@ -592,6 +600,7 @@ export function CalibrationForm({
     setSubmitError(null);
     try {
       await onSubmit(toInput(values));
+      rememberPrinter(values.printerId);
     } catch (err) {
       setSubmitError(
         err instanceof Error ? err.message : "Não foi possível salvar.",

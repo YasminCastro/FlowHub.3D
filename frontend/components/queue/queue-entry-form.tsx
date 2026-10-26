@@ -49,6 +49,7 @@ import {
   usePageHeaderBreadcrumb,
 } from "@/contexts/page-header-action-context";
 import { useCostContext } from "@/hooks/use-cost-context";
+import { useLastPrinter } from "@/hooks/use-last-printer";
 import { ApiError } from "@/lib/api/auth";
 import { isNotFoundError } from "@/lib/api/client";
 import {
@@ -112,7 +113,8 @@ function parseUnits(text: string) {
   return Math.max(1, Math.round(parseDecimal(text)) || 1);
 }
 
-// Filamento, tempo e impressora do registro padrão, para tantas unidades.
+// Filamento e tempo do registro padrão, para tantas unidades. A impressora
+// fica a escolhida (por padrão, a última usada).
 function draftFromItem(item: PrintItem, units: number, prev: Draft): Draft {
   const record = getDefaultRecord(item);
   if (!record) return { ...prev, itemId: item.id };
@@ -124,7 +126,6 @@ function draftFromItem(item: PrintItem, units: number, prev: Draft): Draft {
       ? record.filaments.map((u) => usageDraftFrom(u.filament, u.grams * scale))
       : [EMPTY_USAGE],
     time: minutesToDuration(record.totalMinutes * scale),
-    printerId: record.printer.id ?? prev.printerId,
     modelUrl: item.modelUrl ?? "",
   };
 }
@@ -192,6 +193,7 @@ export function QueueEntryForm({ entryId }: { entryId?: string }) {
   const [isSaving, setIsSaving] = useState(false);
   const { costs, loadError: costsError } = useCostContext();
   const printers = costs?.printers ?? [];
+  const lastPrinter = useLastPrinter();
 
   useEffect(() => {
     if (!sourceId) return;
@@ -261,7 +263,7 @@ export function QueueEntryForm({ entryId }: { entryId?: string }) {
   const minutes = durationToMinutes(draft.time) ?? 0;
   const usages = toUsages(draft.usages, filaments);
   const grams = usages.reduce((sum, u) => sum + u.grams, 0);
-  const printerId = draft.printerId || printers[0]?.id || "";
+  const printerId = draft.printerId || lastPrinter.pick(printers);
   const printer = printers.find((p) => p.id === printerId);
   const name = draft.source === "item" ? (item?.name ?? "") : draft.name.trim();
 
@@ -306,9 +308,11 @@ export function QueueEntryForm({ entryId }: { entryId?: string }) {
     try {
       if (entryId) {
         await updateQueueEntry(entryId, input);
+        lastPrinter.rememberPrinter(input.printer.id);
         router.push(`/dashboard/fila/${entryId}`);
       } else {
         await addToQueue(input, draft.position);
+        lastPrinter.rememberPrinter(input.printer.id);
         router.push("/dashboard/fila");
       }
     } catch (err) {

@@ -63,6 +63,7 @@ import {
   changedFieldClass,
 } from "@/components/prints/print-bits";
 import { FramedPhoto } from "@/components/prints/framed-photo";
+import { useLastPrinter } from "@/hooks/use-last-printer";
 import {
   DEFAULT_SLICER_SETTINGS,
   FAILURE_REASONS,
@@ -148,11 +149,13 @@ function RecordForm({
   const [date, setDate] = useState(
     isEditing ? base.printedAt.slice(0, 10) : today(),
   );
-  // Impressora excluída não pode ir num registro novo: começa da primeira.
+  // Edição: a do registro. Novo: a última usada (impressora excluída não
+  // pode ir num registro novo).
+  const lastPrinter = useLastPrinter();
   const [printerId, setPrinterId] = useState(
-    costs.printers.some((p) => p.id === base.printer.id)
+    isEditing && costs.printers.some((p) => p.id === base.printer.id)
       ? base.printer.id!
-      : (costs.printers[0]?.id ?? ""),
+      : lastPrinter.pick(costs.printers),
   );
   const [units, setUnits] = useState(String(base.units));
   // Rolo do registro de base que já acabou continua escolhível aqui; o que
@@ -412,6 +415,7 @@ function RecordForm({
           })
         : await addPrintRecord(item.id, input, options, files);
       photos.forEach((photo) => URL.revokeObjectURL(photo.preview));
+      if (selectedPrinter) lastPrinter.rememberPrinter(selectedPrinter.id);
       onSaved(updated, photoError);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível salvar.");

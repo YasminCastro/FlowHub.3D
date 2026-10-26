@@ -57,6 +57,7 @@ import {
   usePageHeaderBreadcrumb,
 } from "@/contexts/page-header-action-context";
 import { useCostContext } from "@/hooks/use-cost-context";
+import { useLastPrinter } from "@/hooks/use-last-printer";
 import { Category, listCategories } from "@/lib/api/category";
 import {
   INFILL_PATTERNS,
@@ -270,7 +271,7 @@ const EMPTY_DRAFT: Draft = {
   modelUrl: "",
   parentId: NO_PARENT,
   date: today(),
-  // Vazio = primeira impressora cadastrada.
+  // Vazio = a última impressora usada (ou a primeira cadastrada).
   printerId: "",
   time: EMPTY_DURATION,
   units: "1",
@@ -293,13 +294,13 @@ function settingsDraft(settings: SlicerSettings | null) {
   };
 }
 
-// Derivado: começa com a categoria e a impressão do item de origem.
+// Derivado: começa com a categoria e a impressão do item de origem; a
+// impressora fica a última usada.
 function draftFromParent(parent: PrintItem, record: PrintRecord): Draft {
   return {
     ...EMPTY_DRAFT,
     categoryId: parent.category?.id ?? "",
     parentId: parent.id,
-    printerId: record.printer.id ?? "",
     time: minutesToDuration(record.totalMinutes),
     units: String(record.units),
     usages: record.filaments.map((u) => usageDraftFrom(u.filament, u.grams)),
@@ -313,6 +314,7 @@ function draftFromCopy(source: PrintItem, record: PrintRecord): Draft {
   return {
     ...draftFromParent(source, record),
     name: `${source.name} (cópia)`,
+    printerId: record.printer.id ?? "",
     modelUrl: source.modelUrl ?? "",
     parentId: source.derivedFrom?.id ?? NO_PARENT,
     note: record.note ?? "",
@@ -387,6 +389,7 @@ export function PrintItemForm() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { costs, loadError: costsError } = useCostContext();
   const printers = costs?.printers ?? [];
+  const lastPrinter = useLastPrinter();
 
   useEffect(() => {
     listPrintFilaments()
@@ -431,7 +434,7 @@ export function PrintItemForm() {
   const usages = toUsages(draft.usages, filaments);
   const grams = usages.reduce((sum, u) => sum + u.grams, 0);
   const extraItems = toExtraItemUsages(draft.extraItems, extraItemOptions);
-  const printerId = draft.printerId || printers[0]?.id || "";
+  const printerId = draft.printerId || lastPrinter.pick(printers);
   const printer = costs ? findCostPrinter(costs, printerId) : null;
   const perUnitCost = costs
     ? computeCostPerUnit(
@@ -521,6 +524,7 @@ export function PrintItemForm() {
         },
         photos.map((photo) => photo.file),
       );
+      lastPrinter.rememberPrinter(printer!.id);
       router.push(
         `/dashboard/impressoes/${created.id}${photoError ? "?fotos=erro" : ""}`,
       );
