@@ -142,8 +142,9 @@ model Brand {
   createdAt               DateTime          @default(now())
   updatedAt               DateTime          @updatedAt
 
-  notes     BrandNote[]
-  filaments Filament[]
+  notes        BrandNote[]
+  filaments    Filament[]
+  calibrations Calibration[]
 
   @@unique([userId, name])
 }
@@ -625,9 +626,17 @@ model Calibration {
   retractionDistance Float?
   notes              String?
   calibratedAt       DateTime
-  // Cascade: sem o filamento ou a impressora a calibração não significa nada.
-  filamentId         String
-  filament           Filament          @relation(fields: [filamentId], references: [id], onDelete: Cascade)
+  // Vale para um filamento (filamentId) ou, genérica, para todas as cores de
+  // uma marca e material (brandId + filamentType, sem filamentId). Um CHECK
+  // na migration garante que é sempre um dos dois. A específica vence a
+  // genérica no mesmo filamento.
+  // Cascade: sem o filamento, a marca ou a impressora a calibração não
+  // significa nada.
+  filamentId         String?
+  filament           Filament?         @relation(fields: [filamentId], references: [id], onDelete: Cascade)
+  brandId            String?
+  brand              Brand?            @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  filamentType       String?
   printerId          String
   printer            Printer           @relation(fields: [printerId], references: [id], onDelete: Cascade)
   userId             String
@@ -637,8 +646,12 @@ model Calibration {
 
   versions CalibrationVersion[]
 
+  // NULL não repete no Postgres: a primeira chave só vale para as
+  // específicas, a segunda só para as genéricas.
   @@unique([userId, filamentId, printerId, slicer])
+  @@unique([userId, brandId, filamentType, printerId, slicer])
   @@index([filamentId])
+  @@index([brandId])
   @@index([printerId])
 }
 

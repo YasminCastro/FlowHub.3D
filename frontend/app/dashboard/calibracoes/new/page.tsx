@@ -19,6 +19,8 @@ import {
   parseDecimal,
   pickValues,
   saveCalibration,
+  targetForGroupOf,
+  targetOf,
 } from "@/lib/api/calibration";
 
 // Valores que o guia por fatiador manda pela URL.
@@ -56,8 +58,20 @@ function NewCalibration() {
   }
 
   // "Nova versão": parte dos valores atuais, data de hoje e sem observação.
+  // Com ?generic=1, a específica de origem vira a genérica da marca e
+  // material dela.
+  const sourceTarget = source ? targetOf(source) : null;
+  const group =
+    sourceTarget && "brandId" in sourceTarget
+      ? sourceTarget
+      : source?.filament && params.get("generic") === "1"
+        ? targetForGroupOf(source.filament)
+        : null;
   const defaults: CalibrationFormDefaults = {
-    filamentId: source?.filament.id ?? params.get("filament") ?? undefined,
+    group,
+    filamentId: group
+      ? undefined
+      : (source?.filament?.id ?? params.get("filament") ?? undefined),
     printerId: source?.printer.id ?? params.get("printer") ?? undefined,
     slicer:
       slicerParam && SLICERS.includes(slicerParam)
@@ -91,7 +105,11 @@ function NewCalibration() {
             aria-hidden="true"
           />
           <span className="font-medium">
-            {source ? "Nova versão" : "Nova"}
+            {source && group && !source.group
+              ? "Nova genérica"
+              : source
+                ? "Nova versão"
+                : "Nova"}
           </span>
         </>
       }

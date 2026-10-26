@@ -65,4 +65,21 @@ describe('CalibrationDto', () => {
       }),
     ).toEqual({});
   });
+
+  it('aceita marca + material no lugar do filamento (genérica)', async () => {
+    expect(
+      await messagesFor({
+        ...valid,
+        filamentId: null,
+        brandId: '3c2b1a09-8f7e-4d6c-9b5a-4e3d2c1b0a99',
+        filamentType: 'PLA',
+      }),
+    ).toEqual({});
+  });
+
+  it('sem filamento nem marca, pede o filamento', async () => {
+    expect(await messagesFor({ ...valid, filamentId: undefined })).toEqual({
+      filamentId: ['Escolha o filamento.'],
+    });
+  });
 });

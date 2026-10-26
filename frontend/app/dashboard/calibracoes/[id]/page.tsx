@@ -8,6 +8,7 @@ import {
   ArrowUpRight,
   ChevronRight,
   History,
+  Layers,
   NotebookPen,
   Pencil,
   Plus,
@@ -34,8 +35,10 @@ import {
 import { useCalibration } from "@/hooks/use-calibration";
 import {
   Calibration,
+  CalibrationFilament,
   CalibrationValues,
   SLICER_LABELS,
+  calibrationSubject,
   findCalibrationFor,
   formatCalibrationAge,
   formatFlow,
@@ -44,6 +47,8 @@ import {
   formatTemp,
   formatVolumetricSpeed,
   summarizeValues,
+  targetForGroupOf,
+  targetOf,
 } from "@/lib/api/calibration";
 import { SPOOL_LEVEL_LABELS } from "@/lib/api/filament";
 import { cn, formatDatePtBR } from "@/lib/utils";
@@ -207,15 +212,123 @@ function VersionHistory({ calibration }: { calibration: Calibration }) {
   );
 }
 
+function FilamentCard({
+  calibration,
+  filament,
+  overridden,
+}: {
+  calibration: Calibration;
+  filament: CalibrationFilament;
+  /** A genérica da marca e material, que esta específica substitui. */
+  overridden?: Calibration;
+}) {
+  return (
+    <section className="flex flex-col gap-3.25">
+      <CalLabel>O filamento</CalLabel>
+      <div className="flex flex-col gap-3 rounded-md bg-card p-3.5 shadow-sm">
+        <div className="flex items-center gap-2.5 text-sm">
+          <CalSwatch colors={filament.colors} className="size-4" />
+          {filament.colorName}
+        </div>
+        <div className="flex items-stretch gap-4">
+          <div className="flex flex-col gap-1">
+            <CalLabel>Carretel</CalLabel>
+            <span className="font-heading text-lg leading-none font-medium">
+              {SPOOL_LEVEL_LABELS[filament.spoolLevel]}
+            </span>
+          </div>
+          <CalVRule />
+          <div className="flex flex-col gap-1">
+            <CalLabel>Marca</CalLabel>
+            <span className="pt-0.75 text-[13px]">{filament.brandName}</span>
+          </div>
+        </div>
+        <Link
+          href={`/dashboard/filamentos/${filament.id}`}
+          className={cn(actionClass, "text-[12.5px]")}>
+          <ArrowUpRight />
+          Abrir filamento
+        </Link>
+      </div>
+      {overridden ? (
+        <Link
+          href={`/dashboard/calibracoes/${overridden.id}`}
+          className={cn(actionClass, "justify-between")}
+        >
+          <span className="flex flex-col items-start gap-0.75">
+            <span className="text-[13px]">
+              Vale no lugar da genérica de {filament.type}
+            </span>
+            <span className="text-[11.5px] text-foreground/50 tabular-nums">
+              {summarizeValues(overridden)}
+            </span>
+          </span>
+          <ArrowUpRight className="size-3.25!" />
+        </Link>
+      ) : (
+        <Link
+          href={`/dashboard/calibracoes/new?from=${calibration.id}&generic=1`}
+          className={actionClass}
+        >
+          <Layers />
+          Usar para todas as cores de {filament.type} · {filament.brandName}
+        </Link>
+      )}
+    </section>
+  );
+}
+
+// Na genérica: as cores que ela cobre. As com calibração própria ficam de fora.
+function GroupFilaments({ calibration }: { calibration: Calibration }) {
+  const group = calibration.group!;
+  return (
+    <section className="flex flex-col gap-3.25">
+      <div className="flex items-baseline gap-2.5">
+        <CalLabel>Filamentos cobertos</CalLabel>
+        <span className="text-[11.5px] text-foreground/40">
+          {group.type} · {group.brandName}
+        </span>
+      </div>
+      {group.filaments.length ? (
+        <div className="flex flex-col">
+          {group.filaments.map((f) => (
+            <Link
+              key={f.id}
+              href={`/dashboard/filamentos/${f.id}`}
+              className="flex items-center gap-2.5 border-b border-border/50 py-2 text-[13px] transition-colors hover:bg-foreground/4"
+            >
+              <CalSwatch colors={f.colors} className="size-3.5" />
+              <span className="truncate">{f.colorName}</span>
+              <span className="ml-auto text-[11.5px] text-foreground/50">
+                {SPOOL_LEVEL_LABELS[f.spoolLevel]}
+              </span>
+            </Link>
+          ))}
+        </div>
+      ) : (
+        <p className="text-[12.5px] text-muted-foreground">
+          Nenhum filamento desta marca e material sem calibração própria nesta
+          impressora e fatiador.
+        </p>
+      )}
+      <p className="text-xs leading-normal text-foreground/45">
+        Uma cor com calibração própria usa a dela no lugar desta.
+      </p>
+    </section>
+  );
+}
+
 export default function CalibrationDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const { calibration, all, isLoading, loadError, isNotFound } = useCalibration(params.id);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
-  const title = calibration
-    ? `${calibration.filament.colorName} · ${SLICER_LABELS[calibration.slicer]}`
-    : null;
+  const subject = calibration ? calibrationSubject(calibration) : null;
+  const title =
+    calibration && subject
+      ? `${subject.name} · ${SLICER_LABELS[calibration.slicer]}`
+      : null;
 
   usePageHeaderBreadcrumb(
     calibration ? (
@@ -272,7 +385,7 @@ export default function CalibrationDetailPage() {
 
   if (isNotFound) return <NotFoundState resource="calibracoes" />;
 
-  if (loadError || !calibration) {
+  if (loadError || !calibration || !subject) {
     return (
       <div className="flex flex-col gap-4 p-8">
         <p role="alert" className="text-[12.5px] text-destructive">
@@ -287,25 +400,35 @@ export default function CalibrationDetailPage() {
   const otherSlicer = calibration.slicer === "ORCA" ? "CREALITY" : "ORCA";
   const sibling = findCalibrationFor(
     all,
-    calibration.filament.id,
+    targetOf(calibration),
     calibration.printer.id,
     otherSlicer,
   );
+  // Específica de um filamento que também tem genérica: ela vence.
+  const overridden = calibration.filament
+    ? findCalibrationFor(
+        all,
+        targetForGroupOf(calibration.filament),
+        calibration.printer.id,
+        calibration.slicer,
+      )
+    : undefined;
 
   return (
     <div className="-m-4 grid flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_372px]">
       <div className="flex min-w-0 flex-col gap-6.5 px-7.5 py-6.5">
         <div className="flex items-start gap-4">
           <CalSwatch
-            colors={calibration.filament.colors}
+            colors={subject.colors}
             className="size-11.5 rounded-[10px]"
           />
           <div className="min-w-0">
             <h1 className="mb-1.25 text-[32px] leading-tight font-bold">
-              {calibration.filament.colorName}
+              {subject.name}
             </h1>
             <div className="flex flex-wrap items-center gap-2.25">
-              <Badge variant="outline">{calibration.filament.type}</Badge>
+              <Badge variant="outline">{subject.type}</Badge>
+              {subject.isGeneric && <Badge variant="secondary">Genérica</Badge>}
               <Badge>{SLICER_LABELS[calibration.slicer]}</Badge>
               <span className="flex items-center gap-1.5 text-[12.5px] text-foreground/55">
                 <Printer className="size-3.25" aria-hidden="true" />
@@ -378,8 +501,9 @@ export default function CalibrationDetailPage() {
             </div>
           ) : (
             <p className="text-[12.5px] text-muted-foreground">
-              Nenhuma impressão registrada com este filamento nesta
-              impressora desde a calibração.
+              {subject.isGeneric
+                ? "Nenhuma impressão registrada com os filamentos desta genérica nesta impressora desde a calibração."
+                : "Nenhuma impressão registrada com este filamento nesta impressora desde a calibração."}
             </p>
           )}
         </section>
@@ -390,41 +514,24 @@ export default function CalibrationDetailPage() {
 
         <hr className="fade-rule" />
 
-        <section className="flex flex-col gap-3.25">
-          <CalLabel>O filamento</CalLabel>
-          <div className="flex flex-col gap-3 rounded-md bg-card p-3.5 shadow-sm">
-            <div className="flex items-center gap-2.5 text-sm">
-              <CalSwatch colors={calibration.filament.colors} className="size-4" />
-              {calibration.filament.colorName}
-            </div>
-            <div className="flex items-stretch gap-4">
-              <div className="flex flex-col gap-1">
-                <CalLabel>Carretel</CalLabel>
-                <span className="font-heading text-lg leading-none font-medium">
-                  {SPOOL_LEVEL_LABELS[calibration.filament.spoolLevel]}
-                </span>
-              </div>
-              <CalVRule />
-              <div className="flex flex-col gap-1">
-                <CalLabel>Marca</CalLabel>
-                <span className="pt-0.75 text-[13px]">
-                  {calibration.filament.brandName}
-                </span>
-              </div>
-            </div>
-            <Link
-              href={`/dashboard/filamentos/${calibration.filament.id}`}
-              className={cn(actionClass, "text-[12.5px]")}>
-              <ArrowUpRight />
-              Abrir filamento
-            </Link>
-          </div>
-        </section>
+        {calibration.filament ? (
+          <FilamentCard
+            calibration={calibration}
+            filament={calibration.filament}
+            overridden={overridden}
+          />
+        ) : (
+          <GroupFilaments calibration={calibration} />
+        )}
 
         <hr className="fade-rule" />
 
         <section className="flex flex-col gap-3.25">
-          <CalLabel>Mesmo filamento no outro fatiador</CalLabel>
+          <CalLabel>
+            {subject.isGeneric
+              ? "Mesma genérica no outro fatiador"
+              : "Mesmo filamento no outro fatiador"}
+          </CalLabel>
           {sibling ? (
             <Link
               href={`/dashboard/calibracoes/${sibling.id}`}

@@ -105,7 +105,8 @@ function useCopy() {
   return { copied, copy };
 }
 
-type CopySource = Pick<Calibration, "filament" | "slicer"> & CalibrationValues;
+type CopySource = Pick<Calibration, "filament" | "group" | "slicer"> &
+  CalibrationValues;
 
 /** Ícone da linha da lista: copia sem abrir a calibração. */
 export function CopyValuesIconButton({

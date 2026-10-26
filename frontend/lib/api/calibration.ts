@@ -4,7 +4,9 @@ import { listPrinters } from "./printer";
 
 // Calibrações: os valores que funcionaram para cada filamento, amarrados a
 // uma impressora e a um fatiador. Uma por combinação; salvar de novo a mesma
-// combinação guarda os valores anteriores no histórico.
+// combinação guarda os valores anteriores no histórico. A genérica vale para
+// todas as cores de uma marca e material; a específica de um filamento vence
+// a genérica dele.
 
 export type Slicer = "ORCA" | "CREALITY";
 
@@ -29,6 +31,7 @@ export type CalibrationFilament = {
   colorName: string;
   /** Material/acabamento exibido na tag (PLA, PETG, PLA Matte...). */
   type: string;
+  brandId: string;
   brandName: string;
   colors: string[];
   spoolLevel: SpoolLevel;
@@ -80,11 +83,37 @@ export type CalibrationPrint = {
   outcome: "SUCCESS" | "FAILURE";
 };
 
+/** Filamento que uma genérica cobre. */
+export type CalibrationGroupFilament = Pick<
+  CalibrationFilament,
+  "id" | "colorName" | "colors" | "spoolLevel"
+>;
+
+/** Marca + material de uma genérica. */
+export type CalibrationGroup = {
+  brandId: string;
+  brandName: string;
+  type: string;
+  /** Filamentos da marca e material sem específica na mesma impressora e
+   * fatiador, por nome da cor. */
+  filaments: CalibrationGroupFilament[];
+};
+
+/** A quem a calibração vale: um filamento, ou uma marca + material. */
+export type CalibrationTarget =
+  | { filamentId: string }
+  | { brandId: string; brandName: string; type: string };
+
 export type Calibration = CalibrationValues & {
   id: string;
-  filamentId: string;
+  filamentId: string | null;
+  brandId: string | null;
+  filamentType: string | null;
   printerId: string;
-  filament: CalibrationFilament;
+  /** Na específica. */
+  filament: CalibrationFilament | null;
+  /** Na genérica. */
+  group: CalibrationGroup | null;
   printer: CalibrationPrinter;
   slicer: Slicer;
   calibratedAt: string;
@@ -96,7 +125,10 @@ export type Calibration = CalibrationValues & {
 export type CalibrationDetail = Calibration & { prints: CalibrationPrint[] };
 
 export type CalibrationInput = CalibrationValues & {
-  filamentId: string;
+  /** Um filamento, ou marca + material (genérica). */
+  filamentId: string | null;
+  brandId: string | null;
+  filamentType: string | null;
   printerId: string;
   slicer: Slicer;
   calibratedAt: string;
@@ -146,6 +178,7 @@ export async function listCalibrationFilaments(): Promise<
     id: f.id,
     colorName: f.colorName,
     type: f.type,
+    brandId: f.brand.id,
     brandName: f.brand.name,
     colors: f.colors,
     spoolLevel: f.spoolLevel,
@@ -180,27 +213,98 @@ export function pickValues(source: CalibrationValues): CalibrationValues {
   };
 }
 
+/** O material é texto livre: "PLA" e "pla" são o mesmo. */
+export function sameFilamentType(a: string, b: string) {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+export function targetOf(calibration: Calibration): CalibrationTarget {
+  return calibration.group
+    ? {
+        brandId: calibration.group.brandId,
+        brandName: calibration.group.brandName,
+        type: calibration.group.type,
+      }
+    : { filamentId: calibration.filament!.id };
+}
+
+/** A genérica que cobriria esse filamento (mesma marca e material). */
+export function targetForGroupOf(filament: CalibrationFilament) {
+  return {
+    brandId: filament.brandId,
+    brandName: filament.brandName,
+    type: filament.type,
+  } satisfies CalibrationTarget;
+}
+
+function matchesTarget(c: Calibration, target: CalibrationTarget) {
+  if ("filamentId" in target) return c.filament?.id === target.filamentId;
+  return (
+    !!c.group &&
+    c.group.brandId === target.brandId &&
+    sameFilamentType(c.group.type, target.type)
+  );
+}
+
 export function findCalibrationFor(
   list: Calibration[],
-  filamentId: string,
+  target: CalibrationTarget,
   printerId: string,
   slicer: Slicer,
 ) {
   return list.find(
     (c) =>
-      c.filament.id === filamentId &&
+      matchesTarget(c, target) &&
       c.printer.id === printerId &&
       c.slicer === slicer,
   );
 }
 
-/** Filamentos com rolo em estoque que não têm nenhuma calibração. */
+/** Filamentos com rolo em estoque sem calibração, nem específica nem
+ * genérica da marca e material. */
 export function getUncalibratedFilaments(
   list: Calibration[],
   filaments: CalibrationFilament[],
 ) {
-  const calibrated = new Set(list.map((c) => c.filament.id));
+  const calibrated = new Set(
+    list.flatMap((c) =>
+      c.filament ? [c.filament.id] : (c.group?.filaments.map((f) => f.id) ?? []),
+    ),
+  );
   return filaments.filter((f) => isInStock(f) && !calibrated.has(f.id));
+}
+
+/** Como a calibração aparece: o filamento, ou a marca + material. */
+export type CalibrationSubject = {
+  /** Cor do filamento, ou "Todas as cores · Marca". */
+  name: string;
+  type: string;
+  brandName: string;
+  /** Na genérica, a primeira cor de até três filamentos cobertos. */
+  colors: string[];
+  isGeneric: boolean;
+};
+
+export function calibrationSubject(
+  calibration: Pick<Calibration, "filament" | "group">,
+): CalibrationSubject {
+  const { filament, group } = calibration;
+  if (group) {
+    return {
+      name: `Todas as cores · ${group.brandName}`,
+      type: group.type,
+      brandName: group.brandName,
+      colors: group.filaments.slice(0, 3).flatMap((f) => f.colors.slice(0, 1)),
+      isGeneric: true,
+    };
+  }
+  return {
+    name: filament!.colorName,
+    type: filament!.type,
+    brandName: filament!.brandName,
+    colors: filament!.colors,
+    isGeneric: false,
+  };
 }
 
 export function getCalibrationAgeDays(calibratedAt: string) {
@@ -246,11 +350,13 @@ export function summarizeValues(values: CalibrationValues) {
 
 /** Texto colado na área de transferência pelo botão de copiar. */
 export function calibrationClipboardText(
-  calibration: Pick<Calibration, "filament" | "slicer"> & CalibrationValues,
+  calibration: Pick<Calibration, "filament" | "group" | "slicer"> &
+    CalibrationValues,
 ) {
+  const subject = calibrationSubject(calibration);
   // Na mesma ordem em que se preenche o perfil no fatiador.
   const lines = [
-    `${calibration.filament.colorName} (${calibration.filament.type}) · ${SLICER_LABELS[calibration.slicer]}`,
+    `${subject.name} (${subject.type}) · ${SLICER_LABELS[calibration.slicer]}`,
     `Mesa 1ª camada: ${calibration.bedTempFirstLayer} °C`,
     `Mesa demais camadas: ${calibration.bedTemp} °C`,
     `Bico inicial: ${calibration.nozzleTempInitial} °C`,

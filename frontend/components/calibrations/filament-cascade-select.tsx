@@ -10,16 +10,28 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CalSwatch } from "@/components/calibrations/calibration-bits";
-import { CalibrationFilament } from "@/lib/api/calibration";
+import {
+  CalibrationFilament,
+  CalibrationTarget,
+  sameFilamentType,
+} from "@/lib/api/calibration";
 import { SPOOL_LEVEL_LABELS } from "@/lib/api/filament";
 import { cn } from "@/lib/utils";
+
+export type FilamentGroupValue = Extract<CalibrationTarget, { brandId: string }>;
+
+// Valor da opção "todas as cores" no seletor de cor.
+const ALL_COLORS = "__all_colors__";
 
 function unique(values: string[]) {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b, "pt-BR"));
 }
 
 function matches(f: CalibrationFilament, type: string, brandName: string) {
-  return (!type || f.type === type) && (!brandName || f.brandName === brandName);
+  return (
+    (!type || sameFilamentType(f.type, type)) &&
+    (!brandName || f.brandName === brandName)
+  );
 }
 
 type Filter = { type: string; brandName: string };
@@ -27,29 +39,38 @@ type Filter = { type: string; brandName: string };
 /**
  * Filamento em três passos, como em Impressões: o material filtra as marcas,
  * material e marca filtram as cores. Se o filtro deixa uma cor só, ela já
- * fica escolhida. As props de acessibilidade (id, aria-*) que o FormControl
- * injeta vão para o seletor de cor, que é o valor do campo.
+ * fica escolhida. Com `onGroupChange`, a cor também aceita "Todas as cores":
+ * a calibração genérica da marca e material. As props de acessibilidade (id,
+ * aria-*) que o FormControl injeta vão para o seletor de cor, que é o valor
+ * do campo.
  */
 export function FilamentCascadeSelect({
   filaments,
   value,
   onChange,
+  group = null,
+  onGroupChange,
   className,
   ...controlProps
 }: {
   filaments: CalibrationFilament[];
   value: string;
   onChange: (filamentId: string) => void;
+  /** Marca + material escolhidos como genérica (em vez de uma cor). */
+  group?: FilamentGroupValue | null;
+  onGroupChange?: (group: FilamentGroupValue | null) => void;
   className?: string;
   id?: string;
   "aria-invalid"?: boolean;
   "aria-describedby"?: string;
 }) {
   const selected = filaments.find((f) => f.id === value);
-  // Sem filtro escolhido à mão, material e marca saem do filamento atual.
+  // Sem filtro escolhido à mão, material e marca saem do filamento atual
+  // (ou da genérica).
   const [picked, setPicked] = useState<Filter | null>(null);
-  const type = picked?.type ?? selected?.type ?? "";
-  const brandName = picked?.brandName ?? selected?.brandName ?? "";
+  const type = picked?.type ?? selected?.type ?? group?.type ?? "";
+  const brandName =
+    picked?.brandName ?? selected?.brandName ?? group?.brandName ?? "";
 
   const types = unique(filaments.map((f) => f.type));
   const brands = unique(
@@ -60,11 +81,12 @@ export function FilamentCascadeSelect({
     .sort((a, b) => a.colorName.localeCompare(b.colorName, "pt-BR"));
   // Com material e marca escolhidos, o nome da cor basta.
   const narrowed = !!type && !!brandName;
+  const canPickGroup = !!onGroupChange && narrowed && options.length > 0;
 
   function applyFilter(next: Filter) {
     const brandsForType = unique(
       filaments
-        .filter((f) => !next.type || f.type === next.type)
+        .filter((f) => !next.type || sameFilamentType(f.type, next.type))
         .map((f) => f.brandName),
     );
     let brand = brandsForType.includes(next.brandName) ? next.brandName : "";
@@ -73,6 +95,13 @@ export function FilamentCascadeSelect({
     }
     setPicked({ type: next.type, brandName: brand });
 
+    // A genérica continua escolhida enquanto o filtro for o dela.
+    if (group) {
+      if (group.brandName === brand && sameFilamentType(group.type, next.type))
+        return;
+      onGroupChange?.(null);
+    }
+
     const nextOptions = filaments.filter((f) => matches(f, next.type, brand));
     if (selected && nextOptions.some((f) => f.id === selected.id)) return;
     onChange(next.type && brand && nextOptions.length === 1 ? nextOptions[0].id : "");
@@ -80,10 +109,22 @@ export function FilamentCascadeSelect({
 
   // Escolher a cor direto também acerta material e marca. Cor vazia (o Select
   // limpa quando a opção some do filtro) não mexe no filtro.
-  function chooseColor(filamentId: string) {
-    if (filamentId) setPicked(null);
-    onChange(filamentId);
+  function chooseColor(next: string) {
+    if (next === ALL_COLORS) {
+      const brandId = options[0]?.brandId;
+      if (!brandId) return;
+      onChange("");
+      onGroupChange?.({ brandId, brandName, type: options[0].type });
+      return;
+    }
+    if (next) {
+      setPicked(null);
+      if (group) onGroupChange?.(null);
+    }
+    onChange(next);
   }
+
+  const groupColors = options.slice(0, 3).flatMap((f) => f.colors.slice(0, 1));
 
   return (
     <div
@@ -135,7 +176,7 @@ export function FilamentCascadeSelect({
       </Select>
 
       <Select
-        value={value || null}
+        value={group ? ALL_COLORS : value || null}
         onValueChange={(next) => chooseColor(next ?? "")}
       >
         <SelectTrigger
@@ -145,7 +186,15 @@ export function FilamentCascadeSelect({
         >
           <SelectValue>
             {() =>
-              selected ? (
+              group ? (
+                <span className="flex min-w-0 flex-1 items-center gap-2">
+                  <CalSwatch colors={groupColors} className="size-3" />
+                  <span className="truncate">Todas as cores</span>
+                  <span className="ml-auto pl-2 text-[11px] text-muted-foreground">
+                    Genérica
+                  </span>
+                </span>
+              ) : selected ? (
                 <span className="flex min-w-0 flex-1 items-center gap-2">
                   <CalSwatch colors={selected.colors} className="size-3" />
                   <span className="truncate">
@@ -166,6 +215,16 @@ export function FilamentCascadeSelect({
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
+          {canPickGroup && (
+            <SelectItem value={ALL_COLORS}>
+              <CalSwatch colors={groupColors} className="size-3" />
+              Todas as cores
+              <span className="ml-auto pl-3 text-[11px] text-muted-foreground">
+                Genérica · {options.length}{" "}
+                {options.length === 1 ? "filamento" : "filamentos"}
+              </span>
+            </SelectItem>
+          )}
           {options.map((f) => (
             <SelectItem key={f.id} value={f.id}>
               <CalSwatch colors={f.colors} className="size-3" />

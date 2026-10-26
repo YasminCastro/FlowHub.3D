@@ -30,6 +30,7 @@ import {
   SLICERS,
   SLICER_LABELS,
   Slicer,
+  calibrationSubject,
   formatFlow,
   formatPressureAdvance,
   formatRetraction,
@@ -115,6 +116,8 @@ function Num({ children }: { children: React.ReactNode }) {
 }
 
 function CalibrationRow({ calibration }: { calibration: Calibration }) {
+  const subject = calibrationSubject(calibration);
+  const covered = calibration.group?.filaments.length ?? 0;
   return (
     <div
       className={cn(
@@ -126,11 +129,19 @@ function CalibrationRow({ calibration }: { calibration: Calibration }) {
         href={`/dashboard/calibracoes/${calibration.id}`}
         className="flex min-w-0 items-center gap-2.25 text-sm after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:rounded-sm focus-visible:after:outline-2 focus-visible:after:outline-brand"
       >
-        <CalSwatch colors={calibration.filament.colors} />
-        <span className="truncate">{calibration.filament.colorName}</span>
+        <CalSwatch colors={subject.colors} />
+        <span className="truncate">{subject.name}</span>
+        {subject.isGeneric && (
+          <span
+            className="shrink-0 text-[11.5px] text-foreground/45"
+            title="Calibração genérica: vale para as cores da marca e material sem calibração própria"
+          >
+            genérica · {covered} {covered === 1 ? "filamento" : "filamentos"}
+          </span>
+        )}
       </Link>
       <Badge variant="outline" className="justify-self-start">
-        {calibration.filament.type}
+        {subject.type}
       </Badge>
       <span className="text-[12.5px] text-foreground/60">
         {SLICER_LABELS[calibration.slicer]}
@@ -248,7 +259,11 @@ export default function CalibrationsPage() {
     </Button>,
   );
 
-  const types = [...new Set(calibrations.map((c) => c.filament.type))].sort(
+  const subjects = new Map(
+    calibrations.map((c) => [c.id, calibrationSubject(c)]),
+  );
+  const subjectOf = (c: Calibration) => subjects.get(c.id)!;
+  const types = [...new Set(calibrations.map((c) => subjectOf(c).type))].sort(
     (a, b) => a.localeCompare(b, "pt-BR"),
   );
   const printers = [
@@ -261,16 +276,19 @@ export default function CalibrationsPage() {
 
   const query = search.trim().toLowerCase();
   const visible = calibrations
-    .filter((c) => !query || c.filament.colorName.toLowerCase().includes(query))
+    .filter(
+      (c) =>
+        !query ||
+        `${subjectOf(c).name} ${subjectOf(c).brandName}`
+          .toLowerCase()
+          .includes(query),
+    )
     .filter((c) => !slicerFilter || c.slicer === slicerFilter)
-    .filter((c) => !typeFilter || c.filament.type === typeFilter)
+    .filter((c) => !typeFilter || subjectOf(c).type === typeFilter)
     .filter((c) => !printerFilter || c.printer.id === printerFilter)
     .sort((a, b) => {
       if (sort === "name")
-        return a.filament.colorName.localeCompare(
-          b.filament.colorName,
-          "pt-BR",
-        );
+        return subjectOf(a).name.localeCompare(subjectOf(b).name, "pt-BR");
       const diff = a.calibratedAt.localeCompare(b.calibratedAt);
       return sort === "recent" ? -diff : diff;
     });

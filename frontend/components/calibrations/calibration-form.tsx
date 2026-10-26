@@ -42,7 +42,10 @@ import {
   CalLabel,
   CalSwatch,
 } from "@/components/calibrations/calibration-bits";
-import { FilamentCascadeSelect } from "@/components/calibrations/filament-cascade-select";
+import {
+  FilamentCascadeSelect,
+  FilamentGroupValue,
+} from "@/components/calibrations/filament-cascade-select";
 import {
   usePageHeaderAction,
   usePageHeaderBreadcrumb,
@@ -52,10 +55,12 @@ import {
   CalibrationFilament,
   CalibrationInput,
   CalibrationPrinter,
+  CalibrationTarget,
   CalibrationValues,
   SLICERS,
   SLICER_LABELS,
   Slicer,
+  calibrationSubject,
   findCalibrationFor,
   formatCalibrationAge,
   formatFlow,
@@ -66,7 +71,10 @@ import {
   listCalibrationPrinters,
   listCalibrations,
   parseDecimal,
+  sameFilamentType,
   sanitizeNumber,
+  targetForGroupOf,
+  targetOf,
 } from "@/lib/api/calibration";
 import { cn } from "@/lib/utils";
 
@@ -120,21 +128,35 @@ const bedRule = {
   required: "Informe a temperatura.",
 };
 
-const calibrationFormSchema = z.object({
-  filamentId: z.string().min(1, "Escolha o filamento."),
-  printerId: z.string().min(1, "Escolha a impressora."),
-  slicer: z.enum(["ORCA", "CREALITY"]),
-  flow: numberField({ min: 0.5, max: 1.5, required: "Informe o fluxo." }),
-  nozzleTempInitial: numberField(nozzleRule),
-  nozzleTemp: numberField(nozzleRule),
-  bedTempFirstLayer: numberField(bedRule),
-  bedTemp: numberField(bedRule),
-  pressureAdvance: numberField({ min: 0, max: 2, required: "Informe o PA." }),
-  calibratedAt: z.string().min(1, "Informe a data."),
-  maxVolumetricSpeed: numberField({ min: 1, max: 100, unit: " mm³/s" }),
-  retractionDistance: numberField({ min: 0, max: 15, unit: " mm" }),
-  notes: z.string(),
-});
+const calibrationFormSchema = z
+  .object({
+    // Um filamento, ou a genérica (marca + material) em "group".
+    filamentId: z.string(),
+    group: z
+      .object({ brandId: z.string(), brandName: z.string(), type: z.string() })
+      .nullable(),
+    printerId: z.string().min(1, "Escolha a impressora."),
+    slicer: z.enum(["ORCA", "CREALITY"]),
+    flow: numberField({ min: 0.5, max: 1.5, required: "Informe o fluxo." }),
+    nozzleTempInitial: numberField(nozzleRule),
+    nozzleTemp: numberField(nozzleRule),
+    bedTempFirstLayer: numberField(bedRule),
+    bedTemp: numberField(bedRule),
+    pressureAdvance: numberField({ min: 0, max: 2, required: "Informe o PA." }),
+    calibratedAt: z.string().min(1, "Informe a data."),
+    maxVolumetricSpeed: numberField({ min: 1, max: 100, unit: " mm³/s" }),
+    retractionDistance: numberField({ min: 0, max: 15, unit: " mm" }),
+    notes: z.string(),
+  })
+  .superRefine((values, ctx) => {
+    if (!values.filamentId && !values.group) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["filamentId"],
+        message: "Escolha o filamento.",
+      });
+    }
+  });
 
 type CalibrationFormValues = z.infer<typeof calibrationFormSchema>;
 
@@ -181,8 +203,11 @@ function valuesToForm(values: Partial<CalibrationValues>) {
 }
 
 export type CalibrationFormDefaults = Partial<
-  Pick<CalibrationInput, "filamentId" | "printerId" | "slicer">
+  Pick<CalibrationInput, "printerId" | "slicer">
 > & {
+  filamentId?: string;
+  /** Genérica: marca + material em vez do filamento. */
+  group?: FilamentGroupValue | null;
   /** Valores de partida (nova versão, ou vindos do guia por fatiador). */
   values?: Partial<CalibrationValues>;
   notes?: string | null;
@@ -192,8 +217,18 @@ function toDefaultValues(
   calibration?: Calibration | null,
   defaults?: CalibrationFormDefaults,
 ): CalibrationFormValues {
+  const target = calibration ? targetOf(calibration) : null;
   return {
-    filamentId: calibration?.filament.id ?? defaults?.filamentId ?? "",
+    filamentId: target
+      ? "filamentId" in target
+        ? target.filamentId
+        : ""
+      : (defaults?.filamentId ?? ""),
+    group: target
+      ? "brandId" in target
+        ? target
+        : null
+      : (defaults?.group ?? null),
     printerId: calibration?.printer.id ?? defaults?.printerId ?? "",
     slicer: calibration?.slicer ?? defaults?.slicer ?? "ORCA",
     calibratedAt: calibration ? calibration.calibratedAt.slice(0, 10) : today(),
@@ -206,7 +241,9 @@ function toInput(values: CalibrationFormValues): CalibrationInput {
   const optional = (value: string) =>
     value.trim() ? parseDecimal(value) : null;
   return {
-    filamentId: values.filamentId,
+    filamentId: values.group ? null : values.filamentId,
+    brandId: values.group?.brandId ?? null,
+    filamentType: values.group?.type ?? null,
     printerId: values.printerId,
     slicer: values.slicer,
     calibratedAt: toIso(values.calibratedAt),
@@ -395,6 +432,26 @@ function PreviewValue({ label, value }: { label: string; value: string }) {
   );
 }
 
+function PreviousValues({ calibration }: { calibration: Calibration }) {
+  return (
+    <div className="flex flex-col gap-2 text-[12.5px] text-foreground/62">
+      {(
+        [
+          ["Fluxo", formatFlow(calibration.flow)],
+          ["Bico", formatTemp(calibration.nozzleTemp)],
+          ["Pressure advance", formatPressureAdvance(calibration.pressureAdvance)],
+          ["Calibrada", formatCalibrationAge(calibration.calibratedAt)],
+        ] as const
+      ).map(([label, value]) => (
+        <div key={label} className="flex justify-between">
+          <span>{label}</span>
+          <span className="text-foreground tabular-nums">{value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export type CalibrationFormProps = {
   /** Calibração sendo corrigida no lugar. Omitida = nova (ou nova versão). */
   calibration?: Calibration | null;
@@ -475,16 +532,43 @@ export function CalibrationForm({
   const watched = form.watch();
   const filament = filaments.find((f) => f.id === watched.filamentId);
   const printer = printers.find((p) => p.id === watched.printerId);
+  const target: CalibrationTarget | null = watched.group
+    ? watched.group
+    : watched.filamentId
+      ? { filamentId: watched.filamentId }
+      : null;
   const previous =
-    !isEditing && watched.filamentId && watched.printerId
+    !isEditing && target && watched.printerId
+      ? findCalibrationFor(existing, target, watched.printerId, watched.slicer)
+      : undefined;
+  // Específica nova de um filamento que já tem genérica: dá para partir dela.
+  const groupTarget = filament ? targetForGroupOf(filament) : null;
+  const genericBase =
+    !previous && !watched.group && groupTarget && watched.printerId
       ? findCalibrationFor(
           existing,
-          watched.filamentId,
+          groupTarget,
           watched.printerId,
           watched.slicer,
         )
       : undefined;
   const copySources = existing.filter((c) => c.id !== calibration?.id);
+  const preview = watched.group
+    ? {
+        name: `Todas as cores · ${watched.group.brandName}`,
+        type: watched.group.type,
+        colors: filaments
+          .filter(
+            (f) =>
+              f.brandId === watched.group!.brandId &&
+              sameFilamentType(f.type, watched.group!.type),
+          )
+          .slice(0, 3)
+          .flatMap((f) => f.colors.slice(0, 1)),
+      }
+    : filament
+      ? { name: filament.colorName, type: filament.type, colors: filament.colors }
+      : null;
 
   const show = (value: string, format: (n: number) => string) => {
     const n = parseDecimal(value);
@@ -494,6 +578,10 @@ export function CalibrationForm({
   function copyFrom(id: string) {
     const source = existing.find((c) => c.id === id);
     if (!source) return;
+    copyValues(source);
+  }
+
+  function copyValues(source: CalibrationValues) {
     const values = valuesToForm(source);
     (Object.keys(values) as (keyof typeof values)[]).forEach((key) =>
       form.setValue(key, values[key], { shouldDirty: true }),
@@ -526,7 +614,7 @@ export function CalibrationForm({
             <p className="text-sm text-muted-foreground">
               {isEditing
                 ? "Corrige a versão atual sem criar outra no histórico."
-                : "Os valores que deram o melhor resultado neste filamento, nesta máquina."}
+                : "Os valores que deram o melhor resultado neste filamento, nesta máquina. Em “Todas as cores”, vale para a marca e o material inteiros."}
             </p>
           </div>
 
@@ -549,6 +637,11 @@ export function CalibrationForm({
                       filaments={filaments}
                       value={field.value}
                       onChange={field.onChange}
+                      group={watched.group}
+                      onGroupChange={(group) => {
+                        form.setValue("group", group, { shouldDirty: true });
+                        if (group) form.clearErrors("filamentId");
+                      }}
                     />
                   </FormControl>
                   <FormMessage />
@@ -701,10 +794,10 @@ export function CalibrationForm({
 
         <div className="flex flex-col gap-3.25 rounded-md bg-card px-4 py-3.5 shadow-sm">
           <div className="flex items-center gap-2.25 text-[14.5px]">
-            {filament ? (
+            {preview ? (
               <>
-                <CalSwatch colors={filament.colors} />
-                <span className="truncate">{filament.colorName}</span>
+                <CalSwatch colors={preview.colors} />
+                <span className="truncate">{preview.name}</span>
               </>
             ) : (
               <span className="text-muted-foreground">Filamento</span>
@@ -715,7 +808,8 @@ export function CalibrationForm({
             />
           </div>
           <div className="flex items-center gap-2">
-            {filament && <Badge variant="outline">{filament.type}</Badge>}
+            {preview && <Badge variant="outline">{preview.type}</Badge>}
+            {watched.group && <Badge variant="secondary">Genérica</Badge>}
             <span className="text-xs text-foreground/55">
               {SLICER_LABELS[watched.slicer]}
               {printer && ` · ${printer.name}`}
@@ -744,29 +838,40 @@ export function CalibrationForm({
 
         {previous && (
           <div className="flex flex-col gap-2.75">
-            <CalLabel>Calibração anterior deste filamento</CalLabel>
-            <div className="flex flex-col gap-2 text-[12.5px] text-foreground/62">
-              {(
-                [
-                  ["Fluxo", formatFlow(previous.flow)],
-                  ["Bico", formatTemp(previous.nozzleTemp)],
-                  [
-                    "Pressure advance",
-                    formatPressureAdvance(previous.pressureAdvance),
-                  ],
-                  ["Calibrada", formatCalibrationAge(previous.calibratedAt)],
-                ] as const
-              ).map(([label, value]) => (
-                <div key={label} className="flex justify-between">
-                  <span>{label}</span>
-                  <span className="text-foreground tabular-nums">{value}</span>
-                </div>
-              ))}
-            </div>
+            <CalLabel>
+              {watched.group
+                ? "Genérica atual desta marca e material"
+                : "Calibração anterior deste filamento"}
+            </CalLabel>
+            <PreviousValues calibration={previous} />
             <p className="text-xs leading-normal text-foreground/45">
-              Salvar substitui esses valores. A anterior fica no histórico do
-              filamento.
+              Salvar substitui esses valores. A anterior fica no histórico da
+              calibração.
             </p>
+          </div>
+        )}
+
+        {genericBase && (
+          <div className="flex flex-col gap-2.75">
+            <CalLabel>
+              Genérica de {genericBase.group!.type} ·{" "}
+              {genericBase.group!.brandName}
+            </CalLabel>
+            <PreviousValues calibration={genericBase} />
+            <p className="text-xs leading-normal text-foreground/45">
+              Hoje este filamento usa a genérica. Salvar cria uma calibração
+              só dele, que passa a valer no lugar dela.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="self-start"
+              onClick={() => copyValues(genericBase)}
+            >
+              <Copy />
+              Partir destes valores
+            </Button>
           </div>
         )}
 
@@ -782,12 +887,15 @@ export function CalibrationForm({
               </span>
             </SelectTrigger>
             <SelectContent>
-              {copySources.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  <CalSwatch colors={c.filament.colors} className="size-3" />
-                  {c.filament.colorName} · {SLICER_LABELS[c.slicer]}
-                </SelectItem>
-              ))}
+              {copySources.map((c) => {
+                const subject = calibrationSubject(c);
+                return (
+                  <SelectItem key={c.id} value={c.id}>
+                    <CalSwatch colors={subject.colors} className="size-3" />
+                    {subject.name} · {SLICER_LABELS[c.slicer]}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
           <Link

@@ -10,12 +10,14 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 
 export const CALIBRATION_SLICERS = ['ORCA', 'CREALITY'] as const;
 export type CalibrationSlicerInput = (typeof CALIBRATION_SLICERS)[number];
 
 export const CALIBRATION_NOTES_MAX_LENGTH = 2000;
+export const CALIBRATION_FILAMENT_TYPE_MAX_LENGTH = 60;
 
 type Range = {
   label: string;
@@ -86,9 +88,24 @@ function InRange({ label, min, max, unit = '', integer }: Range) {
 
 const R = CALIBRATION_RANGES;
 
+const isGeneric = (o: CalibrationDto) =>
+  !o.filamentId && (!!o.brandId || !!o.filamentType);
+
+// Vínculo: um filamento, ou marca + material para a genérica. O serviço
+// recusa os dois juntos.
 export class CalibrationDto {
-  @IsUUID()
-  filamentId!: string;
+  @ValidateIf((o: CalibrationDto) => !isGeneric(o))
+  @IsUUID('all', { message: 'Escolha o filamento.' })
+  filamentId?: string | null;
+
+  @ValidateIf(isGeneric)
+  @IsUUID('all', { message: 'Escolha a marca.' })
+  brandId?: string | null;
+
+  @ValidateIf(isGeneric)
+  @IsString({ message: 'Escolha o material.' })
+  @MaxLength(CALIBRATION_FILAMENT_TYPE_MAX_LENGTH)
+  filamentType?: string | null;
 
   @IsUUID()
   printerId!: string;
@@ -131,11 +148,21 @@ export class CalibrationDto {
   notes?: string | null;
 }
 
-// Corrige a versão atual no lugar. Campos omitidos ficam como estão.
+// Corrige a versão atual no lugar. Campos omitidos ficam como estão; mandar
+// qualquer campo do vínculo troca o vínculo inteiro.
 export class UpdateCalibrationDto {
   @IsOptional()
   @IsUUID()
-  filamentId?: string;
+  filamentId?: string | null;
+
+  @IsOptional()
+  @IsUUID()
+  brandId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(CALIBRATION_FILAMENT_TYPE_MAX_LENGTH)
+  filamentType?: string | null;
 
   @IsOptional()
   @IsUUID()

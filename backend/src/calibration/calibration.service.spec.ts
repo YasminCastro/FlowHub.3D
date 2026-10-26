@@ -1,6 +1,10 @@
 import { jest } from '@jest/globals';
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { CalibrationService } from './calibration.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CalibrationDto } from './dto/calibration.js';
@@ -24,7 +28,7 @@ describe('CalibrationService', () => {
       delete: AsyncMock;
     };
     calibrationVersion: { create: AsyncMock };
-    filament: { findFirst: AsyncMock };
+    filament: { findFirst: AsyncMock; findMany: AsyncMock };
     printer: { findFirst: AsyncMock };
     printRecord: { findMany: AsyncMock };
     $transaction: AsyncMock;
@@ -51,6 +55,8 @@ describe('CalibrationService', () => {
     notes: 'Canto parou de descolar',
     calibratedAt,
     filamentId,
+    brandId: null,
+    filamentType: null,
     printerId,
     createdAt: calibratedAt,
     updatedAt: calibratedAt,
@@ -60,8 +66,10 @@ describe('CalibrationService', () => {
       type: 'PLA',
       colors: ['#7fd4c1'],
       spoolLevel: 'FULL',
+      brandId: 'brand-1',
       brand: { name: 'Voolt3D' },
     },
+    brand: null,
     printer: { id: printerId, name: 'Ender 3 V3 KE' },
     versions: [
       {
@@ -104,7 +112,7 @@ describe('CalibrationService', () => {
         delete: jest.fn(),
       },
       calibrationVersion: { create: jest.fn() },
-      filament: { findFirst: jest.fn() },
+      filament: { findFirst: jest.fn(), findMany: jest.fn() },
       printer: { findFirst: jest.fn() },
       printRecord: { findMany: jest.fn() },
       $transaction: jest.fn((operations: Promise<unknown>[]) =>
@@ -149,7 +157,8 @@ describe('CalibrationService', () => {
       });
       expect(prisma.calibrationVersion.create).not.toHaveBeenCalled();
       expect(result.message).toBe('Calibração criada com sucesso');
-      expect(result.data.filament.brandName).toBe('Voolt3D');
+      expect(result.data.filament?.brandName).toBe('Voolt3D');
+      expect(result.data.group).toBeNull();
       expect(result.data.history).toHaveLength(1);
     });
 
@@ -238,7 +247,7 @@ describe('CalibrationService', () => {
         printerId,
         printedAt: { gte: calibratedAt },
         item: { userId },
-        filaments: { some: { filamentId } },
+        filaments: { some: { filamentId: { in: [filamentId] } } },
         OR: [
           { slicer: null },
           { slicer: { contains: 'orca', mode: 'insensitive' } },
@@ -294,6 +303,170 @@ describe('CalibrationService', () => {
         }),
       ).rejects.toThrow(ConflictException);
       expect(prisma.calibration.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('calibração genérica (marca + material)', () => {
+    const brandId = '3c2b1a09-8f7e-4d6c-9b5a-4e3d2c1b0a99';
+    const genericInput: CalibrationDto = {
+      ...input,
+      filamentId: undefined,
+      brandId,
+      filamentType: ' pla ',
+    };
+    const generic = {
+      ...calibration,
+      id: 'cal-generic',
+      filamentId: null,
+      brandId,
+      filamentType: 'PLA',
+      filament: null,
+      brand: { id: brandId, name: 'Voolt3D' },
+    };
+    // Dois PLA e um PETG da marca; o Verde tem específica na mesma combinação.
+    const brandFilaments = [
+      {
+        id: 'fil-azul',
+        brandId,
+        type: 'PLA',
+        colorName: 'Azul',
+        colors: ['#2244aa'],
+        spoolLevel: 'FULL',
+      },
+      {
+        id: filamentId,
+        brandId,
+        type: 'pla',
+        colorName: 'Verde Água',
+        colors: ['#7fd4c1'],
+        spoolLevel: 'HALF',
+      },
+      {
+        id: 'fil-petg',
+        brandId,
+        type: 'PETG',
+        colorName: 'Preto',
+        colors: ['#111111'],
+        spoolLevel: 'FULL',
+      },
+    ];
+
+    function coverage() {
+      prisma.filament.findMany.mockResolvedValue(brandFilaments);
+      prisma.calibration.findMany.mockResolvedValue([
+        { filamentId, printerId, slicer: 'ORCA' },
+      ]);
+    }
+
+    it('cria com marca e o material como está no cadastro', async () => {
+      prisma.filament.findFirst.mockResolvedValue({ type: 'PLA' });
+      prisma.printer.findFirst.mockResolvedValue({ id: printerId });
+      prisma.calibration.findFirst.mockResolvedValue(null);
+      prisma.calibration.create.mockResolvedValue(generic);
+      coverage();
+
+      const result = await service.saveCalibration(userId, genericInput);
+
+      expect(argOf(prisma.filament.findFirst).where).toEqual({
+        userId,
+        brandId,
+        type: { equals: 'pla', mode: 'insensitive' },
+      });
+      expect(argOf(prisma.calibration.findFirst).where).toEqual({
+        userId,
+        printerId,
+        slicer: 'ORCA',
+        filamentId: null,
+        brandId,
+        filamentType: { equals: 'PLA', mode: 'insensitive' },
+      });
+      expect(argOf(prisma.calibration.create).data).toMatchObject({
+        filamentId: null,
+        brandId,
+        filamentType: 'PLA',
+      });
+      expect(result.data.filament).toBeNull();
+      expect(result.data.group).toEqual({
+        brandId,
+        brandName: 'Voolt3D',
+        type: 'PLA',
+        filaments: [
+          {
+            id: 'fil-azul',
+            colorName: 'Azul',
+            colors: ['#2244aa'],
+            spoolLevel: 'FULL',
+          },
+        ],
+      });
+    });
+
+    it('responde 404 quando a marca não tem filamento desse material', async () => {
+      prisma.filament.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.saveCalibration(userId, genericInput),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.calibration.create).not.toHaveBeenCalled();
+    });
+
+    it('recusa filamento e marca juntos', async () => {
+      await expect(
+        service.saveCalibration(userId, { ...genericInput, filamentId }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('lista as impressões dos filamentos cobertos, sem os que têm específica', async () => {
+      prisma.calibration.findFirst.mockResolvedValue(generic);
+      prisma.printRecord.findMany.mockResolvedValue([]);
+      coverage();
+
+      await service.getCalibrationById('cal-generic', userId);
+
+      expect(argOf(prisma.printRecord.findMany)).toMatchObject({
+        where: { filaments: { some: { filamentId: { in: ['fil-azul'] } } } },
+        select: { filaments: { where: { filamentId: { in: ['fil-azul'] } } } },
+      });
+    });
+
+    it('editar sem trocar o vínculo não procura filamento da marca', async () => {
+      prisma.calibration.findFirst.mockResolvedValue(generic);
+      prisma.calibration.update.mockResolvedValue(generic);
+      coverage();
+
+      await service.updateCalibration('cal-generic', userId, {
+        filamentId: null,
+        brandId,
+        filamentType: 'pla',
+        flow: 0.97,
+      });
+
+      expect(prisma.filament.findFirst).not.toHaveBeenCalled();
+      expect(argOf(prisma.calibration.update).data).toEqual({ flow: 0.97 });
+    });
+
+    it('trocar de genérica para um filamento limpa marca e material', async () => {
+      prisma.calibration.findFirst
+        .mockResolvedValueOnce(generic)
+        .mockResolvedValueOnce(null);
+      prisma.filament.findFirst.mockResolvedValue({ id: filamentId });
+      prisma.calibration.update.mockResolvedValue(calibration);
+
+      await service.updateCalibration('cal-generic', userId, {
+        filamentId,
+        brandId: null,
+        filamentType: null,
+      });
+
+      expect(argOf(prisma.calibration.findFirst, 1).where).toMatchObject({
+        filamentId,
+        id: { not: 'cal-generic' },
+      });
+      expect(argOf(prisma.calibration.update).data).toMatchObject({
+        filamentId,
+        brandId: null,
+        filamentType: null,
+      });
     });
   });
 

@@ -11,6 +11,7 @@ import { useCalibration } from "@/hooks/use-calibration";
 import {
   CalibrationInput,
   SLICER_LABELS,
+  calibrationSubject,
   updateCalibration,
 } from "@/lib/api/calibration";
 
@@ -68,7 +69,7 @@ export default function EditCalibrationPage() {
             href={detailHref}
             className="max-w-60 truncate text-muted-foreground hover:text-foreground"
           >
-            {calibration.filament.colorName} ·{" "}
+            {calibrationSubject(calibration).name} ·{" "}
             {SLICER_LABELS[calibration.slicer]}
           </Link>
           <ChevronRight
