@@ -3,8 +3,6 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
-  ArrowDown,
-  ArrowUp,
   ArrowUpRight,
   ChevronRight,
   History,
@@ -15,7 +13,7 @@ import {
   Printer,
   Trash2,
 } from "lucide-react";
-import { ReactNode, useState } from "react";
+import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -56,55 +54,13 @@ import { cn, formatDatePtBR } from "@/lib/utils";
 const actionClass =
   "flex items-center gap-2.25 rounded-md border border-border px-2.75 py-2.25 text-[13px] transition-colors hover:border-brand hover:bg-brand/8 hover:text-brand [&_svg]:size-4";
 
-function Delta({
-  current,
-  previous,
-  format,
-}: {
-  current: number | null;
-  /** undefined = não há versão anterior. */
-  previous: number | null | undefined;
-  format: (value: number) => string;
-}) {
-  if (previous === undefined) {
-    return <span className="text-[11.5px] text-foreground/40">primeira versão</span>;
-  }
-  if (current == null || previous == null) {
-    return (
-      <span className="text-[11.5px] text-foreground/40">
-        {current == previous ? "sem mudança" : "antes sem valor"}
-      </span>
-    );
-  }
-  const diff = +(current - previous).toFixed(4);
-  if (diff === 0) {
-    return <span className="text-[11.5px] text-foreground/40">sem mudança</span>;
-  }
-  const Icon = diff > 0 ? ArrowUp : ArrowDown;
-  return (
-    <span className="flex items-center gap-1 text-[11.5px] text-brand-300 tabular-nums">
-      <Icon className="size-2.75" aria-hidden="true" />
-      {format(Math.abs(diff))} vs anterior
-    </span>
-  );
-}
-
-function BigValue({
-  label,
-  value,
-  delta,
-}: {
-  label: string;
-  value: string;
-  delta: ReactNode;
-}) {
+function BigValue({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-1.25">
       <CalLabel>{label}</CalLabel>
       <span className="font-heading text-[38px] leading-none font-medium tracking-[-0.02em] tabular-nums">
         {value}
       </span>
-      {delta}
     </div>
   );
 }
@@ -125,13 +81,7 @@ const MEASURED: {
   { key: "retractionDistance", label: "Retração", format: formatRetraction },
 ];
 
-function MeasuredValues({
-  calibration,
-  previous,
-}: {
-  calibration: Calibration;
-  previous?: CalibrationValues;
-}) {
+function MeasuredValues({ calibration }: { calibration: Calibration }) {
   return (
     <section className="flex flex-col gap-3.5">
       <CalLabel>Valores medidos</CalLabel>
@@ -143,13 +93,6 @@ function MeasuredValues({
               key={key}
               label={label}
               value={value != null ? format(value) : "—"}
-              delta={
-                <Delta
-                  current={value}
-                  previous={previous ? previous[key] : undefined}
-                  format={format}
-                />
-              }
             />
           );
         })}
@@ -395,7 +338,6 @@ export default function CalibrationDetailPage() {
     );
   }
 
-  const previous = calibration.history[0];
   const versionNumber = calibration.history.length + 1;
   const otherSlicer = calibration.slicer === "ORCA" ? "CREALITY" : "ORCA";
   const sibling = findCalibrationFor(
@@ -443,7 +385,7 @@ export default function CalibrationDetailPage() {
           </div>
         </div>
 
-        <MeasuredValues calibration={calibration} previous={previous} />
+        <MeasuredValues calibration={calibration} />
 
         {calibration.notes && (
           <>
