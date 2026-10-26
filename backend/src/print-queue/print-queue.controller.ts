@@ -12,6 +12,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { PrintQueueService } from './print-queue.service.js';
 import {
   FinishQueueEntryDto,
+  QueueBatchDto,
   QueueEntryDto,
   ReorderQueueDto,
   UpdateQueueEntryDto,
@@ -27,6 +28,14 @@ export class PrintQueueController {
     @Body() dto: QueueEntryDto,
   ) {
     return this.printQueueService.createEntry(currentUserId, dto);
+  }
+
+  @Post('batch')
+  postBatch(
+    @CurrentUser('userId') currentUserId: string,
+    @Body() dto: QueueBatchDto,
+  ) {
+    return this.printQueueService.createEntries(currentUserId, dto);
   }
 
   @Get()

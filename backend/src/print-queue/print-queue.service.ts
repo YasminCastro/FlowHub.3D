@@ -9,6 +9,7 @@ import { PrintService, filamentPricePerGram } from '../print/print.service.js';
 import {
   FinishQueueEntryDto,
   PublicQueueRequestDto,
+  QueueBatchDto,
   QUEUE_MAX_PENDING_SHARE_REQUESTS,
   QueueEntryDto,
   QueueFilamentDto,
@@ -302,6 +303,53 @@ export class PrintQueueService {
     return {
       message: 'Item adicionado à fila',
       data: this.toResponse(entry),
+    };
+  }
+
+  // Vários itens de uma vez, na ordem recebida, numa transação só: ou entram
+  // todos ou nenhum. No começo, empurram os pendentes; no fim, vêm depois
+  // do último.
+  async createEntries(userId: string, data: QueueBatchDto) {
+    // Valida tudo antes de gravar qualquer um.
+    const built = await Promise.all(
+      data.entries.map((entry) => this.buildEntryData(userId, entry)),
+    );
+
+    const isFirst = data.position === 'first';
+    const start = isFirst ? 0 : await this.nextPosition(userId);
+    const creates = built.map(({ fields, filaments }, i) =>
+      this.prisma.printQueueEntry.create({
+        data: {
+          ...fields,
+          userId,
+          position: start + i,
+          filaments: { create: filaments },
+        },
+        omit: { userId: true },
+        include: entryInclude,
+      }),
+    );
+
+    const created = isFirst
+      ? (
+          await this.prisma.$transaction([
+            this.prisma.printQueueEntry.updateMany({
+              where: { userId, completedAt: null },
+              data: { position: { increment: built.length } },
+            }),
+            ...creates,
+          ])
+        ).slice(1)
+      : await this.prisma.$transaction(creates);
+
+    return {
+      message:
+        created.length === 1
+          ? '1 item adicionado à fila'
+          : `${created.length} itens adicionados à fila`,
+      data: (created as EntryWithRelations[]).map((entry) =>
+        this.toResponse(entry),
+      ),
     };
   }
 

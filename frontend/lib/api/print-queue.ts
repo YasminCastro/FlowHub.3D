@@ -137,6 +137,64 @@ export async function addToQueue(
   return fromEntryResponse(data.data);
 }
 
+// ---------------------------------------------------------------------------
+// Calibração: os testes de um filamento entram na fila de uma vez, nesta
+// ordem, cada um com o tempo e as gramas de uma impressão do teste.
+
+export const CALIBRATION_TESTS = [
+  { id: "temperature", label: "Temperatura", minutes: 60, grams: 15 },
+  { id: "maxFlow", label: "Max flow", minutes: 36, grams: 29 },
+  { id: "pressureAdvance", label: "Pressure advance", minutes: 8, grams: 2 },
+  { id: "flowRate", label: "Flow rate", minutes: 32, grams: 14 },
+  { id: "retraction", label: "Retraction", minutes: 8, grams: 1 },
+] as const;
+
+export type CalibrationTestId = (typeof CALIBRATION_TESTS)[number]["id"];
+
+/**
+ * Adiciona os testes escolhidos para o filamento, na ordem de
+ * CALIBRATION_TESTS (não na ordem em que foram marcados). Devolve os itens
+ * criados, na ordem da fila.
+ */
+export async function addCalibrationToQueue(
+  {
+    filament,
+    printerId,
+    testIds,
+  }: {
+    filament: {
+      id: string;
+      brandName: string;
+      type: string;
+      colorName: string;
+    };
+    printerId: string;
+    testIds: CalibrationTestId[];
+  },
+  position: QueuePosition,
+) {
+  const tests = CALIBRATION_TESTS.filter((t) => testIds.includes(t.id));
+  const filamentName = `${filament.brandName} ${filament.type} ${filament.colorName}`;
+  const data = (await apiFetch("/print-queue/batch", {
+    method: "POST",
+    body: JSON.stringify({
+      position,
+      entries: tests.map((test) => ({
+        name: `Calibração ${test.label} · ${filamentName}`.slice(0, 120),
+        printItemId: null,
+        printerId,
+        filaments: [{ filamentId: filament.id, grams: test.grams }],
+        units: 1,
+        totalMinutes: test.minutes,
+        customer: null,
+        modelUrl: null,
+        note: null,
+      })),
+    }),
+  })) as { message: string; data: QueueEntryResponse[] };
+  return data.data.map(fromEntryResponse);
+}
+
 // Só pendentes. A posição não muda aqui, só arrastando na fila.
 export async function updateQueueEntry(id: string, input: QueueEntryInput) {
   const data = (await apiFetch(`/print-queue/${id}`, {

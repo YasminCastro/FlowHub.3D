@@ -13,6 +13,9 @@ import {
   shareLinkUrl,
 } from "@/lib/api/print-queue";
 
+const SHARED_HINT =
+  "Quem tiver o link vê a fila com tempo, gramas, custo do filamento, custo e preço sugerido (sem clientes, contatos nem observações) e pede impressões sem login.";
+
 /**
  * Link público da fila: quem tem o link vê a fila e pede impressões sem
  * login, e o pedido entra no fim da fila marcado "via link".
@@ -72,70 +75,74 @@ export function QueueShareLink() {
   const url = token ? shareLinkUrl(token) : null;
 
   return (
-    <section className="flex flex-col gap-2.5 rounded-md px-3.75 py-3.5 shadow-[inset_0_0_0_1px_var(--neutral-700)]">
-      <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-        <span className="flex items-center gap-2 text-[13.5px]">
-          <Link2 className="size-3.75 text-brand" aria-hidden="true" />
+    <section className="flex flex-col gap-1.5">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+        <span
+          className="flex shrink-0 items-center gap-1.75 text-[13px]"
+          title={url ? SHARED_HINT : undefined}
+        >
+          <Link2 className="size-3.5 text-brand" aria-hidden="true" />
           Link de pedidos
         </span>
-        <span className="text-xs text-muted-foreground">
-          {url
-            ? "Quem tiver o link vê a fila com tempo, gramas, custo do filamento, custo e preço sugerido (sem clientes, contatos nem observações) e pede impressões sem login."
-            : "Crie um link para outras pessoas verem a fila e pedirem impressões sem precisar de conta."}
-        </span>
-      </div>
 
-      {url ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <Input
-            readOnly
-            value={url}
-            aria-label="Link de pedidos"
-            onFocus={(e) => e.currentTarget.select()}
-            className="h-8 max-w-md min-w-0 flex-1 text-[12.5px]"
-          />
-          <Button size="sm" variant="secondary" onClick={() => copy(url)}>
-            {copied ? <Check /> : <Copy />}
-            {copied ? "Copiado" : "Copiar"}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={isBusy}
-            title="O link atual para de funcionar"
-            onClick={() => run(regenerateShareLink)}
-          >
-            <RefreshCw />
-            Gerar outro
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={isBusy}
-            className="text-muted-foreground"
-            onClick={() =>
-              run(async () => {
-                await disableShareLink();
-                return null;
-              })
-            }
-          >
-            <X />
-            Desativar
-          </Button>
-        </div>
-      ) : (
-        <Button
-          size="sm"
-          variant="secondary"
-          className="self-start"
-          disabled={isBusy}
-          onClick={() => run(regenerateShareLink)}
-        >
-          <Link2 />
-          Criar link
-        </Button>
-      )}
+        {url ? (
+          <>
+            <Input
+              readOnly
+              value={url}
+              aria-label="Link de pedidos"
+              aria-description={SHARED_HINT}
+              onFocus={(e) => e.currentTarget.select()}
+              className="h-7 max-w-xs min-w-40 flex-1 text-xs"
+            />
+            <Button size="sm" variant="secondary" onClick={() => copy(url)}>
+              {copied ? <Check /> : <Copy />}
+              {copied ? "Copiado" : "Copiar"}
+            </Button>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              disabled={isBusy}
+              title="Gerar outro link (o atual para de funcionar)"
+              aria-label="Gerar outro link"
+              onClick={() => run(regenerateShareLink)}
+            >
+              <RefreshCw />
+            </Button>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              disabled={isBusy}
+              className="text-muted-foreground"
+              title="Desativar link"
+              aria-label="Desativar link"
+              onClick={() =>
+                run(async () => {
+                  await disableShareLink();
+                  return null;
+                })
+              }
+            >
+              <X />
+            </Button>
+          </>
+        ) : (
+          <>
+            <span className="text-xs text-muted-foreground">
+              Para outras pessoas verem a fila e pedirem impressões sem conta.
+            </span>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={isBusy}
+              onClick={() => run(regenerateShareLink)}
+            >
+              <Link2 />
+              Criar link
+            </Button>
+          </>
+        )}
+      </div>
 
       {error && (
         <p role="alert" className="text-[12.5px] text-destructive">

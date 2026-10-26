@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Copy,
+  FlaskConical,
   GripVertical,
   Layers,
   Link2,
@@ -31,6 +32,7 @@ import {
 } from "@/components/prints/print-bits";
 import { FramedPhoto } from "@/components/prints/framed-photo";
 import { PositionToggle } from "@/components/queue/queue-bits";
+import { QueueCalibrationDialog } from "@/components/queue/queue-calibration-dialog";
 import { QueueShareLink } from "@/components/queue/queue-share-link";
 import { usePageHeaderAction } from "@/contexts/page-header-action-context";
 import { useCostContext } from "@/hooks/use-cost-context";
@@ -199,6 +201,7 @@ export default function PrintQueuePage() {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [showDone, setShowDone] = useState(false);
   const [showAllDone, setShowAllDone] = useState(false);
+  const [isCalibrationOpen, setIsCalibrationOpen] = useState(false);
   const { costs } = useCostContext();
 
   useEffect(() => {
@@ -232,14 +235,24 @@ export default function PrintQueuePage() {
   }, []);
 
   usePageHeaderAction(
-    <Button
-      size="sm"
-      render={<Link href="/dashboard/fila/new" />}
-      nativeButton={false}
-    >
-      <Plus />
-      Adicionar à fila
-    </Button>,
+    <div className="flex items-center gap-2">
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => setIsCalibrationOpen(true)}
+      >
+        <FlaskConical />
+        Calibrar filamento
+      </Button>
+      <Button
+        size="sm"
+        render={<Link href="/dashboard/fila/new" />}
+        nativeButton={false}
+      >
+        <Plus />
+        Adicionar à fila
+      </Button>
+    </div>,
   );
 
   const printers = [
@@ -263,7 +276,6 @@ export default function PrintQueuePage() {
 
   const filamentSwaps = countFilamentSwaps(visible);
 
-  const units = visible.reduce((sum, e) => sum + e.units, 0);
   const minutes = visible.reduce((sum, e) => sum + e.totalMinutes, 0);
 
   const recentDone = done.filter((e) => isRecentlyDone(e));
@@ -608,70 +620,79 @@ export default function PrintQueuePage() {
 
       <QueueShareLink />
 
-      <div className="flex flex-wrap items-stretch gap-6.5">
-        <Stat
-          label="Na fila"
-          value={isLoading ? "–" : String(visible.length)}
-          size="lg"
-        />
-        <StatDivider />
-        <Stat
-          label="Unidades"
-          value={isLoading ? "–" : String(units)}
-          size="lg"
-        />
-        <StatDivider />
-        <Stat
-          label="Tempo de impressão"
-          value={isLoading || !minutes ? "–" : formatDuration(minutes)}
-          size="lg"
-        />
-      </div>
+      <QueueCalibrationDialog
+        open={isCalibrationOpen}
+        onOpenChange={setIsCalibrationOpen}
+        printers={costs?.printers ?? []}
+        onAdded={(added, position) =>
+          setPending((prev) =>
+            position === "first" ? [...added, ...prev] : [...prev, ...added],
+          )
+        }
+      />
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-        {printers.length > 1 && (
-          <div className="flex flex-wrap items-center gap-1.75">
-            <FilterChip
-              selected={!isFiltered}
-              onClick={() => setPrinterFilter(ALL_PRINTERS)}
-            >
-              Todas as impressoras
-            </FilterChip>
-            {printers.map(([id, name]) => (
+      <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
+        <div className="flex items-stretch gap-6.5">
+          <Stat
+            label="Na fila"
+            value={isLoading ? "–" : String(visible.length)}
+            size="lg"
+          />
+          <StatDivider />
+          <Stat
+            label="Tempo de impressão"
+            value={isLoading || !minutes ? "–" : formatDuration(minutes)}
+            size="lg"
+          />
+        </div>
+
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-x-4 gap-y-3">
+          {printers.length > 1 && (
+            <div className="flex flex-wrap items-center gap-1.75">
               <FilterChip
-                key={id}
-                selected={printerFilter === id}
-                onClick={() =>
-                  setPrinterFilter((prev) => (prev === id ? ALL_PRINTERS : id))
-                }
+                selected={!isFiltered}
+                onClick={() => setPrinterFilter(ALL_PRINTERS)}
               >
-                {name}
+                Todas as impressoras
               </FilterChip>
-            ))}
-          </div>
-        )}
-        {pending.length > 1 && (
-          <div className="ml-auto flex flex-wrap items-center gap-3">
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {filamentSwaps === 1
-                ? "1 troca de filamento"
-                : `${filamentSwaps} trocas de filamento`}
-            </span>
-            <FilterChip
-              selected={byFilament}
-              onClick={() => setByFilament((prev) => !prev)}
-            >
-              <Layers className="size-3.25" aria-hidden="true" />
-              Por filamento
-            </FilterChip>
-            <PositionToggle
-              label="Ordenar a fila"
-              value={sort}
-              onChange={setSort}
-              options={SORT_OPTIONS}
-            />
-          </div>
-        )}
+              {printers.map(([id, name]) => (
+                <FilterChip
+                  key={id}
+                  selected={printerFilter === id}
+                  onClick={() =>
+                    setPrinterFilter((prev) =>
+                      prev === id ? ALL_PRINTERS : id,
+                    )
+                  }
+                >
+                  {name}
+                </FilterChip>
+              ))}
+            </div>
+          )}
+          {pending.length > 1 && (
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {filamentSwaps === 1
+                  ? "1 troca de filamento"
+                  : `${filamentSwaps} trocas de filamento`}
+              </span>
+              <FilterChip
+                selected={byFilament}
+                onClick={() => setByFilament((prev) => !prev)}
+              >
+                <Layers className="size-3.25" aria-hidden="true" />
+                Por filamento
+              </FilterChip>
+              <PositionToggle
+                label="Ordenar a fila"
+                value={sort}
+                onChange={setSort}
+                options={SORT_OPTIONS}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {isSorted && pending.length > 1 && (

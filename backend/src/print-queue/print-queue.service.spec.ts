@@ -289,6 +289,118 @@ describe('PrintQueueService', () => {
     });
   });
 
+  describe('createEntries', () => {
+    // Sem printItemId: os testes de calibração são peças novas.
+    function testEntry(name: string, totalMinutes: number, grams: number) {
+      return entryDto({
+        name,
+        printItemId: null,
+        customer: null,
+        note: null,
+        units: 1,
+        totalMinutes,
+        filaments: [{ filamentId, grams }],
+      });
+    }
+
+    const batch = [
+      testEntry('Calibração temperatura', 60, 15),
+      testEntry('Calibração max flow', 36, 29),
+      testEntry('Calibração pressure advance', 8, 2),
+    ];
+
+    beforeEach(() => {
+      prisma.printer.findFirst.mockResolvedValue({
+        id: printerId,
+        name: 'Bambu A1',
+      });
+      prisma.filament.findMany.mockResolvedValue([filament]);
+      // Devolve o item gravado com os campos do create; os filamentos, que
+      // no create vêm como { create: [...] }, ficam os do item de exemplo.
+      prisma.printQueueEntry.create.mockImplementation((args) =>
+        Promise.resolve(
+          entryRow({
+            ...(args as { data: Record<string, unknown> }).data,
+            filaments: entryRow().filaments,
+          }),
+        ),
+      );
+      prisma.printQueueEntry.updateMany.mockResolvedValue({ count: 2 });
+    });
+
+    it('adds them at the end, in the order received', async () => {
+      prisma.printQueueEntry.aggregate.mockResolvedValue({
+        _max: { position: 4 },
+      });
+
+      const result = await service.createEntries(userId, { entries: batch });
+
+      const created = [0, 1, 2].map((call) =>
+        dataOf(prisma.printQueueEntry.create, call),
+      );
+      expect(
+        created.map((d) => [d.name as string, d.position as number]),
+      ).toEqual([
+        ['Calibração temperatura', 5],
+        ['Calibração max flow', 6],
+        ['Calibração pressure advance', 7],
+      ]);
+      expect(created[1]).toMatchObject({
+        totalMinutes: 36,
+        units: 1,
+        printerId,
+        userId,
+      });
+      const filaments = created[1].filaments as { create: unknown[] };
+      expect(filaments.create[0]).toMatchObject({
+        filamentId,
+        grams: 29,
+      });
+      expect(prisma.printQueueEntry.updateMany).not.toHaveBeenCalled();
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(result.data).toHaveLength(3);
+      expect(result.message).toBe('3 itens adicionados à fila');
+    });
+
+    it('puts them next in the queue, keeping their order', async () => {
+      const result = await service.createEntries(userId, {
+        entries: batch,
+        position: 'first',
+      });
+
+      // Abre espaço para os três de uma vez.
+      expect(argOf(prisma.printQueueEntry.updateMany)).toEqual({
+        where: { userId, completedAt: null },
+        data: { position: { increment: 3 } },
+      });
+      expect(
+        [0, 1, 2].map(
+          (call) =>
+            dataOf(prisma.printQueueEntry.create, call).position as number,
+        ),
+      ).toEqual([0, 1, 2]);
+      expect(prisma.printQueueEntry.aggregate).not.toHaveBeenCalled();
+      // O resultado do updateMany não entra na resposta.
+      expect(result.data.map((e) => e.name)).toEqual([
+        'Calibração temperatura',
+        'Calibração max flow',
+        'Calibração pressure advance',
+      ]);
+    });
+
+    it('saves nothing when one entry is invalid', async () => {
+      prisma.filament.findMany
+        .mockResolvedValueOnce([filament])
+        .mockResolvedValueOnce([]);
+
+      await expect(
+        service.createEntries(userId, { entries: batch.slice(0, 2) }),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.printQueueEntry.create).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+  });
+
   describe('updateEntry', () => {
     beforeEach(() => {
       prisma.printQueueEntry.findFirst.mockResolvedValue(entryRow());

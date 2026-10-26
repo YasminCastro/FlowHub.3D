@@ -2,6 +2,7 @@ import { OmitType } from '@nestjs/mapped-types';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsIn,
   IsInt,
@@ -106,6 +107,24 @@ export class QueueEntryDto {
 export class UpdateQueueEntryDto extends OmitType(QueueEntryDto, [
   'position',
 ] as const) {}
+
+// Vários itens de uma vez, na ordem em que vieram (os testes de uma
+// calibração, por exemplo). Entram todos juntos no começo ou no fim.
+export const QUEUE_MAX_BATCH = 20;
+
+export class QueueBatchDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(QUEUE_MAX_BATCH)
+  @ValidateNested({ each: true })
+  @Type(() => UpdateQueueEntryDto)
+  entries!: UpdateQueueEntryDto[];
+
+  // Padrão: no fim.
+  @IsOptional()
+  @IsIn(QUEUE_POSITIONS)
+  position?: QueuePosition;
+}
 
 export class ReorderQueueDto {
   // Ids dos pendentes na nova ordem.
