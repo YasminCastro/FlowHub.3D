@@ -30,6 +30,11 @@ import {
 // Bem acima de qualquer fila real; só impede um reorder absurdo.
 export const QUEUE_MAX_ENTRIES = 1000;
 
+// Pedidos do link público ainda pendentes. Passou disso, o link para de
+// aceitar até o dono da fila dar conta (ou tirar) dos que já chegaram:
+// segura quem resolver encher a fila pelo link.
+export const QUEUE_MAX_PENDING_SHARE_REQUESTS = 30;
+
 export const QUEUE_POSITIONS = ['first', 'last'] as const;
 export type QueuePosition = (typeof QUEUE_POSITIONS)[number];
 
@@ -108,6 +113,47 @@ export class ReorderQueueDto {
   @ArrayMaxSize(QUEUE_MAX_ENTRIES)
   @IsUUID('all', { each: true })
   ids!: string[];
+}
+
+// Pedido pelo link público: só o que quem pede sabe. Impressora, filamento e
+// tempo ficam para o dono da fila completar.
+export class PublicQueueRequestDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(PRINT_NAME_MAX_LENGTH)
+  name!: string;
+
+  // Nome de quem pede; vira o "cliente" do item.
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(PRINT_TEXT_MAX_LENGTH)
+  requesterName!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(PRINT_TEXT_MAX_LENGTH)
+  contact?: string | null;
+
+  // Texto livre: "azul e branco", "a cor que tiver"...
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(PRINT_TEXT_MAX_LENGTH)
+  colors!: string;
+
+  @IsInt()
+  @Min(1)
+  @Max(PRINT_MAX_UNITS)
+  units!: number;
+
+  // Obrigatório no pedido: sem o modelo não há o que imprimir.
+  @IsUrl({}, { message: 'O link do modelo não parece um endereço válido.' })
+  @MaxLength(PRINT_URL_MAX_LENGTH)
+  modelUrl!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(PRINT_TEXT_MAX_LENGTH)
+  note?: string | null;
 }
 
 export class NewQueueItemDto {

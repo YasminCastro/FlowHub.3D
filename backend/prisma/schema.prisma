@@ -23,6 +23,9 @@ model User {
   verificationCodeExpiresAt  DateTime?
   passwordResetCode          String?
   passwordResetCodeExpiresAt DateTime?
+  // Link público para outras pessoas pedirem impressões (vai para a fila).
+  // null: link desativado. Trocar o token invalida o link antigo.
+  queueShareToken            String?   @unique
   createdAt                  DateTime  @default(now())
   updatedAt                  DateTime  @updatedAt
 
@@ -499,10 +502,20 @@ model PrintQueueEntry {
   printerName       String
   lastFailureAt     DateTime?
   lastFailureReason String?
+  // Está na impressora desde esta hora. null: ainda não começou. Um por
+  // impressora; sai ao concluir, falhar ou trocar de impressora.
+  startedAt         DateTime?
   completedAt       DateTime?
   // Concluído criando uma impressão nova (em vez de um registro numa que já
   // existia).
   createdItem       Boolean    @default(false)
+  // Pedido feito por alguém pelo link público, sem login. Entra sem
+  // impressora, filamento nem tempo; quem é dono da fila completa depois.
+  fromShareLink     Boolean    @default(false)
+  // Como falar com quem pediu (WhatsApp, e-mail...). Só nos pedidos do link.
+  requesterContact  String?
+  // Cores que quem pediu quer (texto livre). Só nos pedidos do link.
+  requestedColors   String?
   userId            String
   user              User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt         DateTime   @default(now())

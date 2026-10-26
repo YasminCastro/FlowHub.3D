@@ -11,8 +11,11 @@ import {
   Link as LinkIcon,
   Link2,
   Pencil,
+  Play,
   Plus,
+  Printer,
   RotateCcw,
+  Square,
   Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -54,8 +57,11 @@ import {
   getEntryGrams,
   hasEstimate,
   getQueueEntry,
+  describePrinting,
   quoteEntry,
   removeFromQueue,
+  startQueueEntry,
+  stopQueueEntry,
 } from "@/lib/api/print-queue";
 import { formatBRL, formatDatePtBR } from "@/lib/utils";
 
@@ -120,6 +126,28 @@ export default function QueueEntryPage() {
   }, [id]);
 
   const isDone = entry?.completedAt != null;
+  const [isToggling, setIsToggling] = useState(false);
+
+  async function togglePrinting() {
+    if (!entry) return;
+    setIsToggling(true);
+    setError(null);
+    try {
+      setEntry(
+        await (entry.startedAt
+          ? stopQueueEntry(entry.id)
+          : startQueueEntry(entry.id)),
+      );
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : "Não foi possível atualizar o item.",
+      );
+    } finally {
+      setIsToggling(false);
+    }
+  }
 
   async function remove() {
     if (!entry) return;
@@ -179,6 +207,21 @@ export default function QueueEntryPage() {
         </Button>
         {!isDone && (
           <>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isToggling || (!entry.startedAt && !entry.printer.id)}
+              aria-busy={isToggling}
+              title={
+                !entry.startedAt && !entry.printer.id
+                  ? "Escolha a impressora antes de iniciar"
+                  : undefined
+              }
+              onClick={togglePrinting}
+            >
+              {entry.startedAt ? <Square /> : <Play />}
+              {entry.startedAt ? "Parar" : "Iniciar"}
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -286,6 +329,16 @@ export default function QueueEntryPage() {
           </div>
         </div>
 
+        {entry.startedAt && !isDone && (
+          <div className="flex items-center gap-2.5 rounded-md bg-brand/8 px-3.75 py-3 text-[13px] text-brand shadow-[inset_0_0_0_1px_var(--brand-700)]">
+            <Printer className="size-3.75 shrink-0" aria-hidden="true" />
+            <span>
+              Na impressora{entry.printer.name ? ` ${entry.printer.name}` : ""}{" "}
+              · {describePrinting(entry)}
+            </span>
+          </div>
+        )}
+
         {entry.lastFailure && !isDone && (
           <div
             className="flex items-start gap-2.5 rounded-md px-3.75 py-3 text-[13px]"
@@ -358,7 +411,17 @@ export default function QueueEntryPage() {
 
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
           <Detail label="Cliente / pedido">{entry.customer ?? "—"}</Detail>
-          <Detail label="Impressora">{entry.printer.name}</Detail>
+          <Detail label="Impressora">{entry.printer.name || "—"}</Detail>
+          {entry.fromShareLink && (
+            <Detail label="Pedido pelo link · contato">
+              {entry.requesterContact ?? "—"}
+            </Detail>
+          )}
+          {entry.fromShareLink && (
+            <Detail label="Cores pedidas">
+              {entry.requestedColors ?? "—"}
+            </Detail>
+          )}
         </div>
 
         {entry.note && (

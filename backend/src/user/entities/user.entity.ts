@@ -1,39 +1,33 @@
-import { Exclude } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { User } from '../../generated/prisma/client.js';
 
-export class UserEntity implements Omit<
-  User,
-  'password' | 'hashedRefreshToken' | 'passwordResetCode' | 'passwordResetCodeExpiresAt'
-> {
+// O que a API devolve de um usuário. Lista branca: campo novo no User (senha,
+// tokens, códigos de e-mail) só sai daqui se for copiado de propósito.
+export class UserEntity {
   @ApiProperty()
-  id!: string;
+  id: string;
 
   @ApiProperty()
-  email!: string;
+  email: string;
 
   @ApiProperty({ nullable: true, type: String })
-  name!: string | null;
+  name: string | null;
 
   @ApiProperty()
-  createdAt!: Date;
+  isEmailVerified: boolean;
 
   @ApiProperty()
-  isEmailVerified!: boolean;
+  createdAt: Date;
 
   @ApiProperty()
-  verificationCode!: string | null;
+  updatedAt: Date;
 
-  @ApiProperty()
-  verificationCodeExpiresAt!: Date | null;
-
-  @ApiProperty()
-  updatedAt!: Date;
-
-  @Exclude()
-  password!: string;
-
-  constructor(partial: Partial<User>) {
-    Object.assign(this, partial);
+  constructor(user: User) {
+    this.id = user.id;
+    this.email = user.email;
+    this.name = user.name;
+    this.isEmailVerified = user.isEmailVerified;
+    this.createdAt = user.createdAt;
+    this.updatedAt = user.updatedAt;
   }
 }

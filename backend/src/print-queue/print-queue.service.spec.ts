@@ -4,7 +4,12 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrintQueueService } from './print-queue.service.js';
 import { PrintService } from '../print/print.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { FinishQueueEntryDto, QueueEntryDto } from './dto/print-queue.js';
+import {
+  FinishQueueEntryDto,
+  PublicQueueRequestDto,
+  QUEUE_MAX_PENDING_SHARE_REQUESTS,
+  QueueEntryDto,
+} from './dto/print-queue.js';
 import { AddPrintRecordDto } from '../print/dto/print.js';
 
 type AsyncMock = jest.Mock<(...args: any[]) => Promise<any>>;
@@ -30,9 +35,16 @@ describe('PrintQueueService', () => {
       updateMany: AsyncMock;
       delete: AsyncMock;
       aggregate: AsyncMock;
+      count: AsyncMock;
+    };
+    user: {
+      findUnique: AsyncMock;
+      findUniqueOrThrow: AsyncMock;
+      update: AsyncMock;
     };
     printItem: { findFirst: AsyncMock };
-    printer: { findFirst: AsyncMock };
+    printer: { findFirst: AsyncMock; findMany: AsyncMock };
+    costSettings: { findUnique: AsyncMock };
     filament: { findMany: AsyncMock };
     $transaction: AsyncMock;
   };
@@ -73,6 +85,7 @@ describe('PrintQueueService', () => {
       printerName: 'Bambu A1',
       lastFailureAt: null,
       lastFailureReason: null,
+      startedAt: null,
       completedAt: null,
       createdItem: false,
       createdAt: new Date('2026-10-12T12:00:00.000Z'),
@@ -137,9 +150,16 @@ describe('PrintQueueService', () => {
         updateMany: jest.fn(),
         delete: jest.fn(),
         aggregate: jest.fn(),
+        count: jest.fn(),
+      },
+      user: {
+        findUnique: jest.fn(),
+        findUniqueOrThrow: jest.fn(),
+        update: jest.fn(),
       },
       printItem: { findFirst: jest.fn() },
-      printer: { findFirst: jest.fn() },
+      printer: { findFirst: jest.fn(), findMany: jest.fn() },
+      costSettings: { findUnique: jest.fn() },
       filament: { findMany: jest.fn() },
       $transaction: jest.fn((ops: unknown) => Promise.all(ops as unknown[])),
     };
@@ -333,6 +353,112 @@ describe('PrintQueueService', () => {
     });
   });
 
+  describe('updateEntry while printing', () => {
+    const otherPrinterId = '6a1d8d2f-9b63-4b9f-8b8e-1e2d3c4b5a6f';
+
+    beforeEach(() => {
+      prisma.printQueueEntry.findFirst.mockResolvedValue(
+        entryRow({ startedAt: new Date('2026-10-26T12:00:00Z') }),
+      );
+      prisma.printItem.findFirst.mockResolvedValue(savedItem);
+      prisma.filament.findMany.mockResolvedValue([filament]);
+      prisma.printQueueEntry.update.mockResolvedValue(entryRow());
+    });
+
+    it('stops printing when the printer changes', async () => {
+      prisma.printer.findFirst.mockResolvedValue({
+        id: otherPrinterId,
+        name: 'Ender 3',
+      });
+
+      await service.updateEntry(
+        entryId,
+        userId,
+        entryDto({ printerId: otherPrinterId }),
+      );
+
+      expect(dataOf(prisma.printQueueEntry.update).startedAt).toBeNull();
+    });
+
+    it('keeps printing when the printer stays the same', async () => {
+      prisma.printer.findFirst.mockResolvedValue({
+        id: printerId,
+        name: 'Bambu A1',
+      });
+
+      await service.updateEntry(entryId, userId, entryDto());
+
+      expect(dataOf(prisma.printQueueEntry.update)).not.toHaveProperty(
+        'startedAt',
+      );
+    });
+  });
+
+  describe('startEntry', () => {
+    beforeEach(() => {
+      prisma.printQueueEntry.findFirst.mockResolvedValue(entryRow());
+      prisma.printQueueEntry.updateMany.mockResolvedValue({ count: 1 });
+      prisma.printQueueEntry.update.mockImplementation((args) =>
+        Promise.resolve(
+          entryRow((args as { data: Record<string, unknown> }).data),
+        ),
+      );
+    });
+
+    it('marks the entry and frees the printer from the previous one', async () => {
+      const result = await service.startEntry(entryId, userId);
+
+      // Só os pendentes desta impressora, menos o próprio item.
+      expect(argOf(prisma.printQueueEntry.updateMany)).toEqual({
+        where: {
+          userId,
+          printerId,
+          completedAt: null,
+          startedAt: { not: null },
+          id: { not: entryId },
+        },
+        data: { startedAt: null },
+      });
+      expect(dataOf(prisma.printQueueEntry.update).startedAt).toBeInstanceOf(
+        Date,
+      );
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(result.data.startedAt).toBeInstanceOf(Date);
+    });
+
+    it('needs a printer', async () => {
+      prisma.printQueueEntry.findFirst.mockResolvedValue(
+        entryRow({ printerId: null, printerName: '' }),
+      );
+
+      await expect(service.startEntry(entryId, userId)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(prisma.printQueueEntry.update).not.toHaveBeenCalled();
+    });
+
+    it('only starts pending entries of the user', async () => {
+      prisma.printQueueEntry.findFirst.mockResolvedValue(null);
+
+      await expect(service.startEntry(entryId, userId)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(argOf(prisma.printQueueEntry.findFirst).where).toEqual({
+        id: entryId,
+        userId,
+        completedAt: null,
+      });
+    });
+
+    it('stops printing without finishing', async () => {
+      await service.stopEntry(entryId, userId);
+
+      expect(dataOf(prisma.printQueueEntry.update)).toEqual({
+        startedAt: null,
+      });
+    });
+  });
+
   describe('getQueue', () => {
     it('splits pending and done, with the result of the done ones', async () => {
       prisma.printQueueEntry.findMany
@@ -438,6 +564,8 @@ describe('PrintQueueService', () => {
       );
       const data = dataOf(prisma.printQueueEntry.update);
       expect(data.completedAt).toBeInstanceOf(Date);
+      // Saiu da impressora.
+      expect(data.startedAt).toBeNull();
       expect(data.createdItem).toBe(false);
       expect(data.printItemId).toBe(printItemId);
       expect(result.recordId).toBe('rec-9');
@@ -493,6 +621,8 @@ describe('PrintQueueService', () => {
       });
       const data = dataOf(prisma.printQueueEntry.update);
       expect(data.completedAt).toBeUndefined();
+      // Volta para a fila esperando a vez, fora da impressora.
+      expect(data.startedAt).toBeNull();
       expect(data.lastFailureReason).toBe('Descolou da mesa');
       expect(data.lastFailureAt).toBe(record.printedAt);
       expect(result.data.lastFailure).toEqual({
@@ -559,6 +689,280 @@ describe('PrintQueueService', () => {
       expect(argOf(prisma.printQueueEntry.findFirst).where).toMatchObject({
         completedAt: null,
       });
+    });
+  });
+
+  describe('share link', () => {
+    const token = 'k3J9xQ2mT7vB1nR8wZ4yLa';
+
+    function requestDto(
+      overrides: Partial<PublicQueueRequestDto> = {},
+    ): PublicQueueRequestDto {
+      return {
+        name: '  Vaso espiral  ',
+        requesterName: '  Bia  ',
+        contact: '  ',
+        colors: '  Azul e branco  ',
+        units: 2,
+        modelUrl: '  makerworld.com/models/vaso  ',
+        note: '  Em branco, se der  ',
+        ...overrides,
+      };
+    }
+
+    beforeEach(() => {
+      prisma.user.findUnique.mockResolvedValue({ id: userId, name: 'Yasmin' });
+      prisma.printQueueEntry.count.mockResolvedValue(0);
+      prisma.printQueueEntry.aggregate.mockResolvedValue({
+        _max: { position: 4 },
+      });
+      prisma.printQueueEntry.create.mockResolvedValue({ id: entryId });
+    });
+
+    it('creates a new random token each time', async () => {
+      const first = await service.regenerateShareLink(userId);
+      const second = await service.regenerateShareLink(userId);
+
+      expect(first.token).toMatch(/^[\w-]{22}$/);
+      expect(second.token).not.toBe(first.token);
+      expect(argOf(prisma.user.update, 1)).toMatchObject({
+        where: { id: userId },
+        data: { queueShareToken: second.token },
+      });
+    });
+
+    it('disables the link', async () => {
+      await service.disableShareLink(userId);
+      expect(dataOf(prisma.user.update)).toEqual({ queueShareToken: null });
+    });
+
+    it('shows the queue without private fields', async () => {
+      const quoted = {
+        id: entryId,
+        name: 'Chaveiro de porco',
+        units: 4,
+        totalMinutes: 120,
+        printerName: 'Bambu A1',
+        fromShareLink: false,
+      };
+      const request = {
+        id: 'b5c4d3e2-1f0a-4b9c-8d7e-6f5a4b3c2d1e',
+        name: 'Vaso espiral',
+        units: 2,
+        totalMinutes: 0,
+        printerName: '',
+        fromShareLink: true,
+      };
+      prisma.printQueueEntry.findMany
+        .mockResolvedValueOnce([
+          {
+            ...quoted,
+            printerId,
+            lastFailureAt: new Date('2026-10-20T12:00:00Z'),
+            filaments: [
+              { grams: 36, pricePerGram: 0.09 },
+              { grams: 10.04, pricePerGram: 0.1 },
+            ],
+          },
+          { ...request, printerId: null, lastFailureAt: null, filaments: [] },
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: otherEntryId,
+            name: 'Vaso espiral',
+            units: 2,
+            totalMinutes: 120,
+            printerName: 'Bambu A1',
+            fromShareLink: true,
+            printerId,
+            lastFailureAt: null,
+            filaments: [{ grams: 21, pricePerGram: 0.1 }],
+            completedAt: new Date('2026-10-25T12:00:00Z'),
+          },
+        ]);
+      prisma.costSettings.findUnique.mockResolvedValue({
+        energyCostPerKwh: 1,
+        otherFixedCost: 0.5,
+        failureReservePercent: 10,
+        laborCostPerHour: 30,
+        prepMinutesPerPiece: 10,
+        defaultMarginPercent: 50,
+      });
+      prisma.printer.findMany.mockResolvedValue([
+        {
+          id: printerId,
+          powerConsumptionW: 120,
+          energyCostPerKwh: null,
+          maintenanceCostPerHour: 0.5,
+        },
+      ]);
+
+      const result = await service.getSharedQueue(token);
+
+      expect(result).toEqual({
+        ownerName: 'Yasmin',
+        pending: [
+          // Filamento 4,25 + energia 0,24 + manutenção 1,00 + outros 2,00
+          // + reserva 0,55 (cada parte sobe para o centavo).
+          // Preço: (8,04 + 5,00 de preparo) × 1,5.
+          {
+            ...quoted,
+            retrying: true,
+            grams: 46,
+            filamentCost: 4.25,
+            cost: 8.04,
+            price: 19.56,
+          },
+          // Pedido do link ainda sem filamento nem tempo: sem orçamento.
+          {
+            ...request,
+            retrying: false,
+            grams: 0,
+            filamentCost: null,
+            cost: null,
+            price: null,
+          },
+        ],
+        done: [
+          // A mesma estimativa da fila: filamento 2,10 + energia 0,24
+          // + manutenção 1,00 + outros 1,00 + reserva 0,34 = 4,68;
+          // preço (4,68 + 5,00) × 1,5.
+          {
+            id: otherEntryId,
+            name: 'Vaso espiral',
+            units: 2,
+            totalMinutes: 120,
+            printerName: 'Bambu A1',
+            fromShareLink: true,
+            retrying: false,
+            grams: 21,
+            filamentCost: 2.1,
+            cost: 4.68,
+            price: 14.52,
+            completedAt: new Date('2026-10-25T12:00:00Z'),
+          },
+        ],
+      });
+      // Concluídos: só os 5 mais recentes, de qualquer data.
+      expect(argOf(prisma.printQueueEntry.findMany, 1)).toMatchObject({
+        where: { userId, completedAt: { not: null } },
+        orderBy: { completedAt: 'desc' },
+        take: 5,
+      });
+      // Só impressoras da dona da fila entram na conta.
+      expect(argOf(prisma.printer.findMany).where).toEqual({
+        id: { in: [printerId] },
+        userId,
+      });
+      // O select é o que garante que cliente, contato, observação e link do
+      // modelo não saem do banco para o link.
+      for (const call of [0, 1]) {
+        const { select, where } = argOf(prisma.printQueueEntry.findMany, call);
+        expect(where).toMatchObject({ userId });
+        for (const field of [
+          'customer',
+          'requesterContact',
+          'requestedColors',
+          'note',
+          'modelUrl',
+          'lastFailureReason',
+          'userId',
+        ]) {
+          expect(select).not.toHaveProperty(field);
+        }
+      }
+      // Dos filamentos, só o que entra na conta (sem cor, marca, tipo).
+      expect(argOf(prisma.printQueueEntry.findMany).select).toMatchObject({
+        filaments: { select: { grams: true, pricePerGram: true } },
+      });
+    });
+
+    it('uses the default cost settings when none were saved', async () => {
+      prisma.printQueueEntry.findMany
+        .mockResolvedValueOnce([
+          {
+            id: entryId,
+            name: 'Chaveiro de porco',
+            units: 1,
+            totalMinutes: 60,
+            printerName: '',
+            fromShareLink: false,
+            printerId: null,
+            lastFailureAt: null,
+            filaments: [{ grams: 10, pricePerGram: 0.1 }],
+          },
+        ])
+        .mockResolvedValueOnce([]);
+      prisma.costSettings.findUnique.mockResolvedValue(null);
+
+      const result = await service.getSharedQueue(token);
+
+      // Filamento 1,00 + reserva padrão de 7% (0,07); sem impressora, sem
+      // energia nem manutenção.
+      expect(result.pending[0].cost).toBe(1.07);
+      // Preparo padrão: 15 min a R$ 35/h (8,75), margem de 60%.
+      expect(result.pending[0].price).toBe(15.71);
+      expect(prisma.printer.findMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unknown or disabled token', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.createShareRequest(token, requestDto()),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.printQueueEntry.create).not.toHaveBeenCalled();
+    });
+
+    it('adds the request to the end of the owner queue', async () => {
+      const result = await service.createShareRequest(token, requestDto());
+
+      expect(argOf(prisma.user.findUnique).where).toEqual({
+        queueShareToken: token,
+      });
+      expect(dataOf(prisma.printQueueEntry.create)).toEqual({
+        name: 'Vaso espiral',
+        customer: 'Bia',
+        requesterContact: null,
+        requestedColors: 'Azul e branco',
+        units: 2,
+        totalMinutes: 0,
+        modelUrl: 'makerworld.com/models/vaso',
+        note: 'Em branco, se der',
+        printerId: null,
+        printerName: '',
+        fromShareLink: true,
+        position: 5,
+        userId,
+      });
+      // Só o id, para quem pediu achar o pedido na fila.
+      expect(result).toEqual({ message: 'Pedido enviado', id: entryId });
+    });
+
+    it.each(['requesterName', 'colors', 'modelUrl'] as const)(
+      'requires %s after trimming',
+      async (field) => {
+        await expect(
+          service.createShareRequest(token, requestDto({ [field]: '  ' })),
+        ).rejects.toThrow(BadRequestException);
+        expect(prisma.printQueueEntry.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it('stops accepting when too many requests are pending', async () => {
+      prisma.printQueueEntry.count.mockResolvedValue(
+        QUEUE_MAX_PENDING_SHARE_REQUESTS,
+      );
+
+      await expect(
+        service.createShareRequest(token, requestDto()),
+      ).rejects.toThrow(BadRequestException);
+      expect(argOf(prisma.printQueueEntry.count).where).toEqual({
+        userId,
+        completedAt: null,
+        fromShareLink: true,
+      });
+      expect(prisma.printQueueEntry.create).not.toHaveBeenCalled();
     });
   });
 });

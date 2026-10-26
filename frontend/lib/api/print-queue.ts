@@ -36,9 +36,18 @@ export type QueueEntry = {
   customer: string | null;
   modelUrl: string | null;
   note: string | null;
+  // Pedido feito por alguém pelo link público da fila.
+  fromShareLink: boolean;
+  // Como falar com quem pediu; só nos pedidos do link.
+  requesterContact: string | null;
+  // Cores que quem pediu quer (texto livre); só nos pedidos do link.
+  requestedColors: string | null;
   createdAt: string;
   // A última falha; some quando o item é concluído com sucesso.
   lastFailure: QueueFailure | null;
+  // Na impressora desde esta hora; null enquanto espera a vez. Um por
+  // impressora.
+  startedAt: string | null;
   completedAt: string | null;
   result: QueueResult | null;
 };
@@ -146,6 +155,25 @@ export async function reorderQueue(ids: string[]) {
   return data.data.map(fromEntryResponse);
 }
 
+/**
+ * Marca que o item está na impressora agora. O que estava na mesma
+ * impressora perde a marcação (no backend; recarregue a fila para ver).
+ */
+export async function startQueueEntry(id: string) {
+  const data = (await apiFetch(`/print-queue/${id}/start`, {
+    method: "POST",
+  })) as EntryResponse;
+  return fromEntryResponse(data.data);
+}
+
+/** Tira a marcação sem concluir. */
+export async function stopQueueEntry(id: string) {
+  const data = (await apiFetch(`/print-queue/${id}/start`, {
+    method: "DELETE",
+  })) as EntryResponse;
+  return fromEntryResponse(data.data);
+}
+
 export async function removeFromQueue(id: string) {
   await apiFetch(`/print-queue/${id}`, { method: "DELETE" });
 }
@@ -187,6 +215,100 @@ export async function finishQueueEntry(
 }
 
 // ---------------------------------------------------------------------------
+// Link público: outras pessoas pedem impressões sem login. O pedido entra no
+// fim da fila, sem impressora, filamento nem tempo.
+
+type ShareLinkResponse = { token: string | null };
+
+/** Endereço da página pública de pedidos para o token. */
+export function shareLinkUrl(token: string) {
+  return `${window.location.origin}/pedido/${token}`;
+}
+
+export async function getShareLink() {
+  return ((await apiFetch("/print-queue/share")) as ShareLinkResponse).token;
+}
+
+/** Cria o link ou troca por um novo; o antigo para de funcionar. */
+export async function regenerateShareLink() {
+  const data = (await apiFetch("/print-queue/share", {
+    method: "POST",
+  })) as ShareLinkResponse;
+  return data.token!;
+}
+
+export async function disableShareLink() {
+  await apiFetch("/print-queue/share", { method: "DELETE" });
+}
+
+export type ShareRequestInput = {
+  name: string;
+  requesterName: string;
+  contact: string | null;
+  colors: string;
+  units: number;
+  modelUrl: string;
+  note: string | null;
+};
+
+// A fila como o link mostra: só o que é da peça, com gramas, custo e preço
+// sugerido já calculados. Cliente, contato e observação não vêm do backend.
+export type SharedQueueEntry = {
+  id: string;
+  name: string;
+  units: number;
+  // 0: ainda sem tempo estimado.
+  totalMinutes: number;
+  // "": impressora ainda não escolhida.
+  printerName: string;
+  fromShareLink: boolean;
+  // Falhou e voltou para a fila.
+  retrying: boolean;
+  // Na impressora desde esta hora; null enquanto espera a vez.
+  startedAt: string | null;
+  // Gramas do lote inteiro; 0: filamento ainda não informado.
+  grams: number;
+  // Custo estimado do lote, calculado no backend (como o "Custo" da fila).
+  // null: sem filamento ou sem tempo, ainda não dá para orçar.
+  cost: number | null;
+  // Só o filamento do lote; aparece mesmo sem tempo. null sem filamento.
+  filamentCost: number | null;
+  // Preço sugerido do lote (como o "Preço sug." da fila); null junto com o
+  // custo.
+  price: number | null;
+};
+
+// Concluído mostra a mesma estimativa que tinha na fila (o gasto real fica
+// no registro em Impressões, que não é público).
+export type SharedDoneEntry = SharedQueueEntry & { completedAt: string };
+
+export type SharedQueue = {
+  ownerName: string | null;
+  pending: SharedQueueEntry[];
+  // Os últimos concluídos (até 5), do mais recente para o mais antigo.
+  done: SharedDoneEntry[];
+};
+
+/** Sem login. 404 quando o link não existe ou foi desativado. */
+export async function getSharedQueue(token: string) {
+  return (await apiFetch(
+    `/public-queue/${encodeURIComponent(token)}`,
+  )) as SharedQueue;
+}
+
+/** Devolve o id do pedido criado. */
+export async function sendShareRequest(
+  token: string,
+  input: ShareRequestInput,
+) {
+  const data = (await apiFetch(`/public-queue/${encodeURIComponent(token)}`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  })) as { message: string; id: string };
+  return data.id;
+}
+
+// ---------------------------------------------------------------------------
 // Cálculos
 
 export function getEntryGrams(entry: Pick<QueueEntry, "filaments">) {
@@ -214,6 +336,9 @@ export type QueueQuote = {
  *
  * Uma entrada é uma impressão: as unidades saem juntas da mesma mesa, então
  * o preparo conta uma vez, não uma por unidade.
+ *
+ * Espelhada no backend (backend/src/print-queue/queue-cost.ts) para a fila do
+ * link público: mudou a conta aqui, muda lá também.
  */
 export function quoteEntry(
   entry: Pick<QueueEntry, "filaments" | "totalMinutes" | "units" | "printer">,
@@ -287,6 +412,48 @@ export function sortQueue(entries: QueueEntry[], view: QueueView) {
     const [bFirst, bLast] = span(b);
     return aFirst - bFirst || aLast - bLast;
   });
+}
+
+/** Quando deve terminar: início + tempo estimado. null sem tempo. */
+export function printingEndsAt(
+  entry: Pick<QueueEntry, "startedAt" | "totalMinutes">,
+) {
+  if (!entry.startedAt || !entry.totalMinutes) return null;
+  return new Date(
+    new Date(entry.startedAt).getTime() + entry.totalMinutes * 60_000,
+  );
+}
+
+function formatClock(date: Date, now: Date) {
+  const time = date.toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  if (date.toDateString() === now.toDateString()) return time;
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  if (date.toDateString() === tomorrow.toDateString()) {
+    return `amanhã ${time}`;
+  }
+  return `${date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} ${time}`;
+}
+
+/**
+ * "termina por volta das 15:40", "deveria ter terminado às 15:40" ou, sem
+ * tempo estimado, "desde 13:20".
+ */
+export function describePrinting(
+  entry: Pick<QueueEntry, "startedAt" | "totalMinutes">,
+  now = new Date(),
+) {
+  if (!entry.startedAt) return null;
+  const endsAt = printingEndsAt(entry);
+  if (!endsAt) {
+    return `desde ${formatClock(new Date(entry.startedAt), now)}`;
+  }
+  return endsAt < now
+    ? `deveria ter terminado às ${formatClock(endsAt, now)}`
+    : `termina por volta das ${formatClock(endsAt, now)}`;
 }
 
 export function isRecentlyDone(entry: QueueEntry, now = new Date()) {

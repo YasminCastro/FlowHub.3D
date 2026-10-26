@@ -34,6 +34,22 @@ export class PrintQueueController {
     return this.printQueueService.getQueue(currentUserId);
   }
 
+  // Link público da fila. Antes de ':id' para "share" não ser lido como id.
+  @Get('share')
+  getShareLink(@CurrentUser('userId') currentUserId: string) {
+    return this.printQueueService.getShareLink(currentUserId);
+  }
+
+  @Post('share')
+  regenerateShareLink(@CurrentUser('userId') currentUserId: string) {
+    return this.printQueueService.regenerateShareLink(currentUserId);
+  }
+
+  @Delete('share')
+  disableShareLink(@CurrentUser('userId') currentUserId: string) {
+    return this.printQueueService.disableShareLink(currentUserId);
+  }
+
   // Antes de ':id' para "order" não ser lido como id.
   @Patch('order')
   reorder(
@@ -66,6 +82,22 @@ export class PrintQueueController {
     @Param('id') entryId: string,
   ) {
     return this.printQueueService.deleteEntry(entryId, currentUserId);
+  }
+
+  @Post(':id/start')
+  start(
+    @CurrentUser('userId') currentUserId: string,
+    @Param('id') entryId: string,
+  ) {
+    return this.printQueueService.startEntry(entryId, currentUserId);
+  }
+
+  @Delete(':id/start')
+  stop(
+    @CurrentUser('userId') currentUserId: string,
+    @Param('id') entryId: string,
+  ) {
+    return this.printQueueService.stopEntry(entryId, currentUserId);
   }
 
   @Post(':id/finish')

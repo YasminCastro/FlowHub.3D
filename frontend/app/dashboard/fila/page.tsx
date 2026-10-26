@@ -11,8 +11,11 @@ import {
   Layers,
   Link2,
   ListOrdered,
+  Play,
   Plus,
+  Printer,
   RotateCcw,
+  Square,
   Trash2,
 } from "lucide-react";
 import { KeyboardEvent, useEffect, useState } from "react";
@@ -28,6 +31,7 @@ import {
 } from "@/components/prints/print-bits";
 import { FramedPhoto } from "@/components/prints/framed-photo";
 import { PositionToggle } from "@/components/queue/queue-bits";
+import { QueueShareLink } from "@/components/queue/queue-share-link";
 import { usePageHeaderAction } from "@/contexts/page-header-action-context";
 import { useCostContext } from "@/hooks/use-cost-context";
 import { ApiError } from "@/lib/api/auth";
@@ -47,17 +51,20 @@ import {
   isRecentlyDone,
   listQueue,
   countFilamentSwaps,
+  describePrinting,
   quoteEntry,
   removeFromQueue,
   reorderQueue,
   sortQueue,
+  startQueueEntry,
+  stopQueueEntry,
 } from "@/lib/api/print-queue";
 import { cn, formatBRL, formatDatePtBR } from "@/lib/utils";
 
 const ALL_PRINTERS = "all";
 
 const QUEUE_COLUMNS =
-  "grid-cols-[18px_22px_44px_minmax(160px,1.6fr)_minmax(110px,1fr)_92px_110px_50px_64px_76px_84px_166px]";
+  "grid-cols-[18px_22px_44px_minmax(160px,1.6fr)_minmax(110px,1fr)_92px_110px_50px_64px_76px_84px_200px]";
 
 const SORT_OPTIONS: { value: QueueSort; label: string }[] = [
   { value: "manual", label: "Manual" },
@@ -128,6 +135,14 @@ function firstPhoto(item: PrintItem | undefined) {
 }
 
 function EntryOrigin({ entry }: { entry: QueueEntry }) {
+  if (entry.startedAt) {
+    return (
+      <span className="inline-flex min-w-0 items-center gap-1 text-brand">
+        <Printer className="size-2.75 shrink-0" aria-hidden="true" />
+        <span className="truncate">imprimindo · {describePrinting(entry)}</span>
+      </span>
+    );
+  }
   if (entry.lastFailure) {
     return (
       <span
@@ -142,6 +157,16 @@ function EntryOrigin({ entry }: { entry: QueueEntry }) {
           month: "2-digit",
         })}
       </span>
+    );
+  }
+  if (entry.fromShareLink && !entry.printer.id) {
+    return (
+      <>
+        <span className="rounded-sm border border-brand/40 px-1.5 text-[10px] leading-4 text-brand">
+          via link
+        </span>
+        falta impressora e orçamento
+      </>
     );
   }
   if (entry.printItem) {
@@ -291,6 +316,37 @@ export default function PrintQueuePage() {
     }
   }
 
+  // Iniciar marca o item na impressora e desmarca o que estava nela (como o
+  // backend faz); parar só desmarca.
+  async function togglePrinting(entry: QueueEntry) {
+    setError(null);
+    try {
+      if (entry.startedAt) {
+        const stopped = await stopQueueEntry(entry.id);
+        setPending((prev) =>
+          prev.map((e) => (e.id === stopped.id ? stopped : e)),
+        );
+      } else {
+        const started = await startQueueEntry(entry.id);
+        setPending((prev) =>
+          prev.map((e) =>
+            e.id === started.id
+              ? started
+              : e.startedAt && e.printer.id === started.printer.id
+                ? { ...e, startedAt: null }
+                : e,
+          ),
+        );
+      }
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : "Não foi possível atualizar o item.",
+      );
+    }
+  }
+
   async function remove(entry: QueueEntry) {
     setPending((prev) => prev.filter((e) => e.id !== entry.id));
     try {
@@ -332,7 +388,7 @@ export default function PrintQueuePage() {
 
     return (
       <div className="overflow-x-auto">
-        <div className="flex min-w-[1112px] flex-col" role="list">
+        <div className="flex min-w-[1146px] flex-col" role="list">
           <div
             className={cn(
               "grid items-center gap-3 py-2",
@@ -376,12 +432,15 @@ export default function PrintQueuePage() {
                   "grid items-center gap-3 py-2.5 transition-colors hover:bg-foreground/4",
                   QUEUE_COLUMNS,
                   ROW_RULE,
+                  entry.startedAt && "bg-brand/6",
                   draggingId === entry.id && "opacity-40",
                 )}
                 style={
-                  entry.lastFailure
-                    ? { backgroundColor: "rgba(217,122,122,.04)" }
-                    : undefined
+                  entry.startedAt
+                    ? undefined
+                    : entry.lastFailure
+                      ? { backgroundColor: "rgba(217,122,122,.04)" }
+                      : undefined
                 }
               >
                 <button
@@ -432,7 +491,7 @@ export default function PrintQueuePage() {
                   {entry.customer ?? "—"}
                 </span>
                 <span className="truncate text-[12.5px] text-foreground/70">
-                  {entry.printer.name}
+                  {entry.printer.name || "—"}
                 </span>
                 <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] whitespace-nowrap">
                   {mainFilament ? (
@@ -466,6 +525,29 @@ export default function PrintQueuePage() {
                   {quote ? formatBRL(quote.price) : "–"}
                 </span>
                 <div className="flex items-center justify-end gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    disabled={!entry.startedAt && !entry.printer.id}
+                    aria-label={
+                      entry.startedAt
+                        ? `Parar ${entry.name} (voltar a esperar)`
+                        : `Iniciar ${entry.name} na impressora`
+                    }
+                    title={
+                      entry.startedAt
+                        ? "Não está mais na impressora"
+                        : entry.printer.id
+                          ? "Está na impressora agora"
+                          : "Escolha a impressora antes de iniciar"
+                    }
+                    className={
+                      entry.startedAt ? "text-brand" : "text-muted-foreground"
+                    }
+                    onClick={() => togglePrinting(entry)}
+                  >
+                    {entry.startedAt ? <Square /> : <Play />}
+                  </Button>
                   <Button
                     variant="ghost"
                     size="icon-sm"
@@ -523,6 +605,8 @@ export default function PrintQueuePage() {
           O que vai imprimir, na ordem. Arraste para mudar a prioridade.
         </p>
       </div>
+
+      <QueueShareLink />
 
       <div className="flex flex-wrap items-stretch gap-6.5">
         <Stat

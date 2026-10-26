@@ -3,16 +3,24 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { PrintService, filamentPricePerGram } from '../print/print.service.js';
 import {
   FinishQueueEntryDto,
+  PublicQueueRequestDto,
+  QUEUE_MAX_PENDING_SHARE_REQUESTS,
   QueueEntryDto,
   QueueFilamentDto,
   ReorderQueueDto,
   UpdateQueueEntryDto,
 } from './dto/print-queue.js';
 import { Prisma } from '../generated/prisma/client.js';
+import { DEFAULT_COST_SETTINGS } from '../cost-settings/cost-settings.service.js';
+import {
+  computeQueueEntryFilamentCost,
+  quoteQueueEntry,
+} from './queue-cost.js';
 
 const entryInclude = {
   printItem: { select: { id: true, name: true } },
@@ -34,6 +42,28 @@ const pendingOrder = [
   { position: 'asc' },
   { createdAt: 'asc' },
 ] satisfies Prisma.PrintQueueEntryOrderByWithRelationInput[];
+
+// Fila vista pelo link público: só o que é da peça (ver getSharedQueue).
+const sharedEntrySelect = {
+  id: true,
+  name: true,
+  units: true,
+  totalMinutes: true,
+  printerName: true,
+  fromShareLink: true,
+  lastFailureAt: true,
+  startedAt: true,
+  // Para as gramas e o custo; não saem como estão.
+  printerId: true,
+  filaments: { select: { grams: true, pricePerGram: true } },
+} satisfies Prisma.PrintQueueEntrySelect;
+
+type SharedEntryRow = Prisma.PrintQueueEntryGetPayload<{
+  select: typeof sharedEntrySelect;
+}>;
+
+// Quantos concluídos o link mostra: só os mais recentes.
+const SHARED_DONE_LIMIT = 5;
 
 @Injectable()
 export class PrintQueueService {
@@ -158,7 +188,11 @@ export class PrintQueueService {
       customer: entry.customer,
       modelUrl: entry.modelUrl,
       note: entry.note,
+      fromShareLink: entry.fromShareLink,
+      requesterContact: entry.requesterContact,
+      requestedColors: entry.requestedColors,
       createdAt: entry.createdAt,
+      startedAt: entry.startedAt,
       completedAt: entry.completedAt,
       // null quando a impressão foi excluída depois.
       printItem,
@@ -258,12 +292,8 @@ export class PrintQueueService {
       ]);
       entry = created;
     } else {
-      const last = await this.prisma.printQueueEntry.aggregate({
-        where: { userId, completedAt: null },
-        _max: { position: true },
-      });
       entry = await this.prisma.printQueueEntry.create({
-        data: { ...entryData, position: (last._max.position ?? -1) + 1 },
+        data: { ...entryData, position: await this.nextPosition(userId) },
         omit: { userId: true },
         include: entryInclude,
       });
@@ -283,13 +313,17 @@ export class PrintQueueService {
     userId: string,
     data: UpdateQueueEntryDto,
   ) {
-    await this.findOwnedEntry(entryId, userId, { pendingOnly: true });
+    const current = await this.findOwnedEntry(entryId, userId, {
+      pendingOnly: true,
+    });
     const { fields, filaments } = await this.buildEntryData(userId, data);
 
     const entry = await this.prisma.printQueueEntry.update({
       where: { id: entryId },
       data: {
         ...fields,
+        // Trocou de impressora: não está mais na que estava.
+        ...(fields.printerId !== current.printerId && { startedAt: null }),
         filaments: { deleteMany: {}, create: filaments },
       },
       omit: { userId: true },
@@ -342,6 +376,238 @@ export class PrintQueueService {
     await this.findOwnedEntry(entryId, userId);
     await this.prisma.printQueueEntry.delete({ where: { id: entryId } });
     return { message: 'Item removido da fila' };
+  }
+
+  // Posição no fim dos pendentes.
+  private async nextPosition(userId: string) {
+    const last = await this.prisma.printQueueEntry.aggregate({
+      where: { userId, completedAt: null },
+      _max: { position: true },
+    });
+    return (last._max.position ?? -1) + 1;
+  }
+
+  // Marca que o item está na impressora agora. Cada impressora imprime um
+  // de cada vez: o que estava nela antes perde a marcação.
+  async startEntry(entryId: string, userId: string) {
+    const entry = await this.findOwnedEntry(entryId, userId, {
+      pendingOnly: true,
+    });
+    if (!entry.printerId) {
+      throw new BadRequestException(
+        'Escolha a impressora do item antes de iniciar.',
+      );
+    }
+
+    const [, started] = await this.prisma.$transaction([
+      this.prisma.printQueueEntry.updateMany({
+        where: {
+          userId,
+          printerId: entry.printerId,
+          completedAt: null,
+          startedAt: { not: null },
+          id: { not: entryId },
+        },
+        data: { startedAt: null },
+      }),
+      this.prisma.printQueueEntry.update({
+        where: { id: entryId },
+        data: { startedAt: new Date() },
+        omit: { userId: true },
+        include: entryInclude,
+      }),
+    ]);
+
+    return {
+      message: 'Item marcado como imprimindo',
+      data: this.toResponse(started),
+    };
+  }
+
+  // Tira a marcação sem concluir (começou por engano, foi pausado...).
+  async stopEntry(entryId: string, userId: string) {
+    await this.findOwnedEntry(entryId, userId, { pendingOnly: true });
+    const entry = await this.prisma.printQueueEntry.update({
+      where: { id: entryId },
+      data: { startedAt: null },
+      omit: { userId: true },
+      include: entryInclude,
+    });
+    return {
+      message: 'Item voltou a esperar na fila',
+      data: this.toResponse(entry),
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Link público
+
+  async getShareLink(userId: string) {
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { queueShareToken: true },
+    });
+    return { token: user.queueShareToken };
+  }
+
+  // Cria o link ou troca por um novo; o antigo para de funcionar na hora.
+  // 128 bits aleatórios: o link é a única "senha" de quem pede.
+  async regenerateShareLink(userId: string) {
+    const token = randomBytes(16).toString('base64url');
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { queueShareToken: token },
+    });
+    return { message: 'Link da fila criado', token };
+  }
+
+  async disableShareLink(userId: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { queueShareToken: null },
+    });
+    return { message: 'Link da fila desativado', token: null };
+  }
+
+  // Token inválido ou desativado responde 404, sem dizer qual dos dois.
+  private async findShareOwner(token: string) {
+    const owner = await this.prisma.user.findUnique({
+      where: { queueShareToken: token },
+      select: { id: true, name: true },
+    });
+    if (!owner) {
+      throw new NotFoundException('Link não encontrado ou desativado.');
+    }
+    return owner;
+  }
+
+  // O que a página pública mostra: a fila na ordem e os concluídos recentes,
+  // só com o que diz respeito à peça, mais as gramas, o custo e o preço
+  // sugerido de cada item. Cliente, contato, observação e link do modelo
+  // ficam de fora: muitos pedidos são de outras pessoas. Custo e preço vêm
+  // prontos, sem as configurações e as impressoras que entram na conta.
+  async getSharedQueue(token: string) {
+    const owner = await this.findShareOwner(token);
+
+    const [pending, done, savedSettings] = await Promise.all([
+      this.prisma.printQueueEntry.findMany({
+        where: { userId: owner.id, completedAt: null },
+        select: sharedEntrySelect,
+        orderBy: pendingOrder,
+      }),
+      this.prisma.printQueueEntry.findMany({
+        where: { userId: owner.id, completedAt: { not: null } },
+        select: { ...sharedEntrySelect, completedAt: true },
+        orderBy: { completedAt: 'desc' },
+        take: SHARED_DONE_LIMIT,
+      }),
+      this.prisma.costSettings.findUnique({
+        where: { userId: owner.id },
+        select: {
+          energyCostPerKwh: true,
+          otherFixedCost: true,
+          failureReservePercent: true,
+          laborCostPerHour: true,
+          prepMinutesPerPiece: true,
+          defaultMarginPercent: true,
+        },
+      }),
+    ]);
+
+    const printerIds = [
+      ...new Set(
+        [...pending, ...done].flatMap((e) =>
+          e.printerId ? [e.printerId] : [],
+        ),
+      ),
+    ];
+    const printers = printerIds.length
+      ? await this.prisma.printer.findMany({
+          where: { id: { in: printerIds }, userId: owner.id },
+          select: {
+            id: true,
+            powerConsumptionW: true,
+            energyCostPerKwh: true,
+            maintenanceCostPerHour: true,
+          },
+        })
+      : [];
+    const settings = savedSettings ?? DEFAULT_COST_SETTINGS;
+
+    // Pendentes e concluídos mostram a mesma estimativa: a da fila. O gasto
+    // real fica no registro em Impressões, que não é público.
+    const toShared = ({
+      lastFailureAt,
+      printerId,
+      filaments,
+      ...entry
+    }: SharedEntryRow) => {
+      const grams = filaments.reduce((sum, f) => sum + f.grams, 0);
+      const quote = quoteQueueEntry(
+        { ...entry, filaments },
+        printers.find((p) => p.id === printerId) ?? null,
+        settings,
+      );
+      return {
+        ...entry,
+        // Só que voltou para a fila; o motivo fica com o dono.
+        retrying: lastFailureAt !== null,
+        // 0: filamento ainda não informado.
+        grams: Math.round(grams * 10) / 10,
+        // Só o filamento; aparece mesmo antes de ter o tempo.
+        filamentCost: computeQueueEntryFilamentCost({ ...entry, filaments }),
+        // null: sem filamento ou sem tempo, ainda não dá para orçar.
+        cost: quote?.cost ?? null,
+        // Preço sugerido, como na fila do usuário.
+        price: quote?.price ?? null,
+      };
+    };
+
+    return {
+      ownerName: owner.name,
+      pending: pending.map(toShared),
+      // Concluir com sucesso limpa a falha: aqui o "retrying" é sempre false.
+      done: done.map(({ completedAt, ...entry }) => ({
+        ...toShared(entry),
+        completedAt: completedAt!,
+      })),
+    };
+  }
+
+  // Entra no fim da fila, marcado como pedido do link. Devolve só o id, para
+  // a página de quem pediu achar o pedido na fila.
+  async createShareRequest(token: string, data: PublicQueueRequestDto) {
+    const owner = await this.findShareOwner(token);
+
+    const pendingRequests = await this.prisma.printQueueEntry.count({
+      where: { userId: owner.id, completedAt: null, fromShareLink: true },
+    });
+    if (pendingRequests >= QUEUE_MAX_PENDING_SHARE_REQUESTS) {
+      throw new BadRequestException(
+        'A fila está cheia de pedidos agora. Tente de novo mais tarde.',
+      );
+    }
+
+    const entry = await this.prisma.printQueueEntry.create({
+      select: { id: true },
+      data: {
+        name: this.requireText(data.name, 'Diga o que quer imprimir.'),
+        customer: this.requireText(data.requesterName, 'Diga seu nome.'),
+        requesterContact: this.normalizeOptional(data.contact),
+        requestedColors: this.requireText(data.colors, 'Diga as cores.'),
+        units: data.units,
+        totalMinutes: 0,
+        modelUrl: this.requireText(data.modelUrl, 'Mande o link do modelo.'),
+        note: this.normalizeOptional(data.note),
+        printerId: null,
+        printerName: '',
+        fromShareLink: true,
+        position: await this.nextPosition(owner.id),
+        userId: owner.id,
+      },
+    });
+
+    return { message: 'Pedido enviado', id: entry.id };
   }
 
   // Grava o registro em Impressões (pelo PrintService, com as mesmas regras
@@ -401,8 +667,11 @@ export class PrintQueueService {
             lastFailureAt: record.printedAt,
             lastFailureReason: failureReason,
             printItemId: saved?.item.id ?? entry.printItemId,
+            // Saiu da impressora; volta para a fila esperando a vez.
+            startedAt: null,
           }
         : {
+            startedAt: null,
             completedAt: new Date(),
             createdItem: Boolean(data.newItem),
             lastFailureAt: null,

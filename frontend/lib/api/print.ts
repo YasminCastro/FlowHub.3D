@@ -637,6 +637,8 @@ export function computeCostPerUnit(
   );
 }
 
+// Espelhada no backend (backend/src/print-queue/queue-cost.ts) para a fila do
+// link público: mudou a conta aqui, muda lá também.
 function computeExactCost(record: CostInput, ctx: CostContext): CostBreakdown {
   const hours = record.totalMinutes / 60;
   const printer = findCostPrinter(ctx, record.printer.id);

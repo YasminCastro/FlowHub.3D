@@ -1,6 +1,5 @@
 import {
   Body,
-  ClassSerializerInterceptor,
   Controller,
   Delete,
   ForbiddenException,
@@ -8,67 +7,66 @@ import {
   NotFoundException,
   Param,
   Patch,
-  Query,
-  UseInterceptors,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { UserService } from './user.service.js';
-import { Prisma, User } from '../generated/prisma/client.js';
 import { UserEntity } from './entities/user.entity.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DeleteAccountDto } from './dto/delete-account.dto.js';
+import { UpdateUserDto } from './dto/update-user.dto.js';
 
+// Cada um só vê e mexe na própria conta. Não há listagem de usuários.
 @ApiTags('user')
 @ApiBearerAuth()
-@UseInterceptors(ClassSerializerInterceptor)
 @Controller('user')
 export class UserController {
   constructor(private readonly userService: UserService) {}
 
-  @Get()
-  @ApiOkResponse({ type: UserEntity, isArray: true })
-  async findAll(
-    @Query('skip') skip?: string,
-    @Query('take') take?: string,
-  ): Promise<UserEntity[]> {
-    const users = await this.userService.users({
-      skip: skip ? Number(skip) : undefined,
-      take: take ? Number(take) : undefined,
-    });
-    return users.map((user) => new UserEntity(user));
+  private assertSelf(currentUserId: string, id: string) {
+    if (id !== currentUserId) {
+      throw new ForbiddenException('Você só pode acessar a sua conta.');
+    }
   }
 
   @Get(':id')
   @ApiOkResponse({ type: UserEntity })
-  async findOne(@Param('id') id: string): Promise<UserEntity> {
+  async findOne(
+    @CurrentUser('userId') currentUserId: string,
+    @Param('id') id: string,
+  ): Promise<UserEntity> {
+    this.assertSelf(currentUserId, id);
     const user = await this.userService.user({ id });
     if (!user) {
-      throw new NotFoundException(`User ${id} not found`);
+      throw new NotFoundException('Usuário não encontrado.');
     }
     return new UserEntity(user);
   }
 
   @Patch(':id')
-  update(
+  @ApiOkResponse({ type: UserEntity })
+  async update(
     @CurrentUser('userId') currentUserId: string,
     @Param('id') id: string,
-    @Body() data: Prisma.UserUpdateInput,
-  ): Promise<User> {
-    if (id !== currentUserId) {
-      throw new ForbiddenException('You can only update your own account.');
-    }
-    return this.userService.updateUser({ where: { id }, data });
+    @Body() dto: UpdateUserDto,
+  ): Promise<UserEntity> {
+    this.assertSelf(currentUserId, id);
+    const user = await this.userService.updateUser({
+      where: { id },
+      data: { name: dto.name },
+    });
+    return new UserEntity(user);
   }
 
   @Delete(':id')
-  remove(
+  @ApiOkResponse({ type: UserEntity })
+  async remove(
     @CurrentUser('userId') currentUserId: string,
     @Param('id') id: string,
     @Body() dto: DeleteAccountDto,
-  ): Promise<User> {
-    if (id !== currentUserId) {
-      throw new ForbiddenException('You can only delete your own account.');
-    }
-    return this.userService.deleteUserWithPassword(id, dto.password);
+  ): Promise<UserEntity> {
+    this.assertSelf(currentUserId, id);
+    return new UserEntity(
+      await this.userService.deleteUserWithPassword(id, dto.password),
+    );
   }
 }
