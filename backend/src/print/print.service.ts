@@ -53,9 +53,11 @@ const itemInclude = {
 } satisfies Prisma.PrintItemInclude;
 
 // ORDER BY da lista paginada (aliases do SQL em getItemsPage). O id no fim
-// desempata, para a mesma peça não aparecer em duas páginas.
+// desempata, para a mesma peça não aparecer em duas páginas. A data da
+// impressão é só o dia, então no "recent" a peça com registro criado ou
+// editado por último (ex.: concluída da fila agora) vem antes no mesmo dia.
 const PRINT_PAGE_ORDER: Record<PrintPageSort, Prisma.Sql> = {
-  recent: Prisma.sql`s."lastPrintedAt" DESC NULLS LAST, i."createdAt" DESC, i.id`,
+  recent: Prisma.sql`s."lastPrintedAt" DESC NULLS LAST, s."lastActivityAt" DESC NULLS LAST, i."createdAt" DESC, i.id`,
   oldest: Prisma.sql`s."lastPrintedAt" ASC NULLS LAST, i."createdAt" ASC, i.id`,
   units: Prisma.sql`s.units DESC, s."lastPrintedAt" DESC NULLS LAST, i.id`,
   name: Prisma.sql`lower(i.name) ASC, i.id`,
@@ -567,6 +569,7 @@ export class PrintService {
       FROM "PrintItem" i
       LEFT JOIN LATERAL (
         SELECT MAX(r."printedAt") AS "lastPrintedAt",
+               MAX(r."updatedAt") AS "lastActivityAt",
                COALESCE(SUM(r.units) FILTER (WHERE r.outcome = 'SUCCESS'), 0)
                  AS units
         FROM "PrintRecord" r
