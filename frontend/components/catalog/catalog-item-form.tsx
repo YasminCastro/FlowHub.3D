@@ -601,7 +601,9 @@ export function CatalogItemForm({
                 {draft.kind === "SIZES" && <SectionLabel>Tamanho</SectionLabel>}
                 <SectionLabel>Impressão</SectionLabel>
                 <SectionLabel className="text-right">Custo</SectionLabel>
-                <SectionLabel className="text-right">Calculado</SectionLabel>
+                <SectionLabel className="text-right">
+                  Preço sugerido
+                </SectionLabel>
                 {draft.kind !== "KIT" && <SectionLabel>Preço</SectionLabel>}
                 {draft.kind !== "SINGLE" && <span />}
               </div>
@@ -684,14 +686,14 @@ export function CatalogItemForm({
                     />
                   </Field>
                   <span className="pb-2.5 text-[12px] text-muted-foreground">
-                    Calculado: soma das peças
+                    Sugerido: soma das peças
                     {kitCalculated != null && ` (${formatBRL(kitCalculated)})`}
                   </span>
                 </div>
               )}
 
               <p className="text-[11.5px] text-muted-foreground/80">
-                Digite um preço para sobrescrever o calculado. Apague para
+                Digite um preço para sobrescrever o sugerido. Apague para
                 voltar ao automático.
               </p>
             </div>

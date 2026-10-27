@@ -37,14 +37,17 @@ export function Stat({
   value,
   size = "md",
   danger,
+  hint,
 }: {
   label: string;
   value: ReactNode;
   size?: "sm" | "md" | "lg";
   danger?: boolean;
+  // Aparece no hover.
+  hint?: string;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1.5" title={hint}>
       <SectionLabel>{label}</SectionLabel>
       <span
         className={cn(

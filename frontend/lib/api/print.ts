@@ -750,7 +750,18 @@ export function getWorstCasePerUnit(
   inStock: PrintFilament[],
   ctx: CostContext,
 ) {
-  return getWorstCaseBreakdownPerUnit(record, inStock, ctx).total;
+  const cost = getWorstCaseBreakdownPerUnit(record, inStock, ctx);
+  // O filamento leva junto a parte dele na reserva para falhas; "outros" é o
+  // resto, para os dois somarem o total.
+  const filamentCost = Math.min(
+    cost.total,
+    ceilCents(cost.filament * (1 + ctx.settings.failureReservePercent / 100)),
+  );
+  return {
+    filamentCost,
+    otherCost: Math.round((cost.total - filamentCost) * 100) / 100,
+    cost: cost.total,
+  };
 }
 
 /** O mesmo pior cenário, parte por parte (o Catálogo mostra o detalhamento). */

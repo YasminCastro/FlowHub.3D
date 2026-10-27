@@ -281,7 +281,7 @@ export default function PrintItemPage() {
 
   const base = getDefaultRecord(item);
   const perUnit = getPerUnit(base, costs);
-  const worstCasePerUnit = getWorstCasePerUnit(base, filaments, costs);
+  const worstCase = getWorstCasePerUnit(base, filaments, costs);
   const stats = getItemStats(item);
   const lostCost = getLostCost(item.records, costs);
   const photos = item.records.flatMap((r) =>
@@ -455,7 +455,7 @@ export default function PrintItemPage() {
               </span>
             </div>
             <div className="flex flex-wrap items-stretch gap-6">
-              <Stat label="Por unidade" value={formatGrams(perUnit.grams)} />
+              <Stat label="Gramas / un." value={formatGrams(perUnit.grams)} />
               <StatDivider />
               <Stat
                 label="Tempo / un."
@@ -464,19 +464,19 @@ export default function PrintItemPage() {
               <StatDivider />
               <Stat
                 label="Filamento / un."
-                value={formatBRL(perUnit.filamentCost)}
+                value={formatBRL(worstCase.filamentCost)}
+                hint="Pior cenário: rolo mais caro em estoque do mesmo material, com a reserva para falhas"
               />
               <StatDivider />
               <Stat
                 label="Outros custos / un."
-                value={formatBRL(perUnit.otherCost)}
+                value={formatBRL(worstCase.otherCost)}
               />
               <StatDivider />
-              <Stat label="Custo / un." value={formatBRL(perUnit.cost)} />
-              <StatDivider />
               <Stat
-                label="Pior cenário / un."
-                value={formatBRL(worstCasePerUnit)}
+                label="Custo / un."
+                value={formatBRL(worstCase.cost)}
+                hint="Pior cenário: rolo mais caro em estoque do mesmo material"
               />
             </div>
           </button>

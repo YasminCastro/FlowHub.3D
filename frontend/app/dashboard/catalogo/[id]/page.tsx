@@ -29,6 +29,7 @@ import { LOW_STOCK_COLOR } from "@/components/catalog/catalog-card";
 import { CatalogDeleteDialog } from "@/components/catalog/catalog-delete-dialog";
 import { FilamentDot } from "@/components/journal/journal-status-badge";
 import {
+  FAILURE_COLOR,
   PhotoPlaceholder,
   SectionLabel,
   Stat,
@@ -46,12 +47,12 @@ import {
   ResolvedVariant,
   VariantPricing,
   describeKind,
-  getKitCalculated,
+  getKitTotals,
   lowColorWarning,
   pricingRows,
   resolveCatalogItem,
 } from "@/lib/api/catalog";
-import { CostContext, formatDecimal, formatGrams } from "@/lib/api/print";
+import { CostContext, formatDecimal } from "@/lib/api/print";
 import { cn, formatBRL } from "@/lib/utils";
 
 function queueHref(variant: ResolvedVariant) {
@@ -115,16 +116,20 @@ function VariantPricingDetails({
         <div className="flex flex-col gap-1 text-[12px] text-muted-foreground tabular-nums">
           <PricingLine label="Impressão" value={pricing.print.total} />
           <PricingLine label={rows.sale[0][0]} value={rows.sale[0][1]} />
-          <PricingLine label="Custo" value={pricing.cost} strong />
+          <PricingLine label="Custo com embalagem" value={pricing.cost} strong />
           {rows.sale.slice(1).map(([label, value]) => (
             <PricingLine key={label} label={label} value={value} />
           ))}
-          <PricingLine label="Calculado" value={pricing.calculated} strong />
+          <PricingLine
+            label="Preço sugerido"
+            value={pricing.calculated}
+            strong
+          />
         </div>
         <p className="text-[11px] leading-relaxed text-muted-foreground/80">
           {isKit
             ? "No kit, a embalagem entra uma vez só no preço do kit, não uma por peça."
-            : `Mão de obra: ${formatDecimal(costs.settings.prepMinutesPerPiece)} min de preparo a ${formatBRL(costs.settings.laborCostPerHour)}/h. A margem vale sobre o custo mais a mão de obra.`}
+            : `Mão de obra: ${formatDecimal(costs.settings.prepMinutesPerPiece)} min de preparo a ${formatBRL(costs.settings.laborCostPerHour)}/h. A margem vale sobre a impressão mais a mão de obra; a embalagem entra pelo custo, sem margem.`}
         </p>
       </div>
     </div>
@@ -281,7 +286,17 @@ export default function CatalogItemPage() {
   const margin = formatDecimal(data.costs.settings.defaultMarginPercent);
   const isSizes = item.kind === "SIZES";
   const isKit = item.kind === "KIT";
-  const kitCalculated = getKitCalculated(resolved.variants);
+  const kitTotals = isKit ? getKitTotals(resolved.variants) : null;
+  const kitManualProfit =
+    kitTotals && item.kitPrice != null
+      ? Math.round(
+          (item.kitPrice -
+            kitTotals.cost -
+            kitTotals.labor -
+            kitTotals.packaging) *
+            100,
+        ) / 100
+      : null;
 
   const priceStats = isSizes
     ? resolved.variants.map((v) => ({
@@ -296,10 +311,8 @@ export default function CatalogItemPage() {
       ];
 
   const rowGrid = isSizes
-    ? "grid-cols-[48px_minmax(0,1.4fr)_70px_84px_92px_110px]"
-    : isKit
-      ? "grid-cols-[minmax(0,1.4fr)_70px_84px_92px]"
-      : "grid-cols-[minmax(0,1.4fr)_70px_84px_92px_110px]";
+    ? "grid-cols-[48px_minmax(0,1.4fr)_84px_92px_84px_84px_104px_110px]"
+    :"grid-cols-[minmax(0,1.4fr)_84px_92px_84px_84px_104px_110px]";
 
   return (
     <div className="flex flex-col gap-6 p-8">
@@ -399,12 +412,14 @@ export default function CatalogItemPage() {
                 >
                   {isSizes && <SectionLabel>Tam.</SectionLabel>}
                   <SectionLabel>Impressão ligada</SectionLabel>
-                  <SectionLabel>Gramas</SectionLabel>
                   <SectionLabel className="text-right">Custo</SectionLabel>
-                  <SectionLabel className="text-right">Calculado</SectionLabel>
-                  {!isKit && (
-                    <SectionLabel className="text-right">Preço</SectionLabel>
-                  )}
+                  <SectionLabel className="text-right">Mão de obra</SectionLabel>
+                  <SectionLabel className="text-right">Lucro</SectionLabel>
+                  <SectionLabel className="text-right">Embalagem</SectionLabel>
+                  <SectionLabel className="text-right">
+                    Preço sugerido
+                  </SectionLabel>
+                  <SectionLabel className="text-right">Preço</SectionLabel>
                 </div>
                 {resolved.variants.map((v) => {
                   const isOpen = openVariantId === v.id;
@@ -453,25 +468,45 @@ export default function CatalogItemPage() {
                             Impressão excluída
                           </span>
                         )}
-                        <span className="text-[12.5px] text-foreground/70 tabular-nums">
-                          {v.grams != null ? formatGrams(v.grams) : "–"}
-                        </span>
                         <span className="text-right text-[12.5px] text-foreground/70 tabular-nums">
                           {v.cost != null ? formatBRL(v.cost) : "–"}
+                        </span>
+                        <span className="text-right text-[12.5px] text-foreground/70 tabular-nums">
+                          {v.pricing ? formatBRL(v.pricing.labor) : "–"}
+                        </span>
+                        <span className="text-right text-[12.5px] text-foreground/70 tabular-nums">
+                          {v.profit != null ? formatBRL(v.profit) : "–"}
+                        </span>
+                        <span className="text-right text-[12.5px] text-foreground/70 tabular-nums">
+                          {v.pricing ? formatBRL(v.pricing.packaging) : "–"}
                         </span>
                         <span className="text-right text-[12.5px] text-muted-foreground tabular-nums">
                           {v.calculated != null ? formatBRL(v.calculated) : "–"}
                         </span>
-                        {!isKit && (
-                          <span className="text-right">
-                            <span className="font-heading text-sm font-medium tabular-nums">
-                              {v.price != null ? formatBRL(v.price) : "–"}
-                            </span>
+                        {/* No kit o preço é do conjunto: só na linha do total. */}
+                        {isKit ? (
+                          <span />
+                        ) : (
+                          <span
+                            className="flex items-center justify-end gap-1.5 font-heading text-sm font-medium tabular-nums"
+                            title={
+                              v.manualProfit != null
+                                ? `Preço manual · lucro de ${formatBRL(v.manualProfit)}`
+                                : undefined
+                            }
+                            style={
+                              v.manualProfit != null && v.manualProfit < 0
+                                ? { color: FAILURE_COLOR }
+                                : undefined
+                            }
+                          >
                             {v.priceOverride != null && (
-                              <span className="block text-[10.5px] text-muted-foreground/80">
-                                manual
-                              </span>
+                              <Pencil
+                                className="size-3 text-muted-foreground"
+                                aria-label="Preço manual"
+                              />
                             )}
+                            {v.price != null ? formatBRL(v.price) : "–"}
                           </span>
                         )}
                       </div>
@@ -487,20 +522,44 @@ export default function CatalogItemPage() {
                 })}
                 {isKit && (
                   <div
-                    className={cn("grid items-baseline gap-3 py-2.75", rowGrid)}
+                    className={cn("grid items-center gap-3 py-2.75", rowGrid)}
                   >
-                    <span className="col-span-3 text-[13px]">
-                      Preço do kit
-                      {item.kitPrice != null && (
-                        <span className="ml-2 text-[10.5px] text-muted-foreground/80">
-                          manual · calculado{" "}
-                          {kitCalculated != null
-                            ? formatBRL(kitCalculated)
-                            : "–"}
-                        </span>
-                      )}
+                    <span className="text-[13px] font-medium">
+                      Total do kit
                     </span>
-                    <span className="text-right font-heading text-sm font-medium tabular-nums">
+                    {[
+                      kitTotals?.cost,
+                      kitTotals?.labor,
+                      kitTotals?.profit,
+                      kitTotals?.packaging,
+                      kitTotals?.calculated,
+                    ].map((value, index) => (
+                      <span
+                        key={index}
+                        className="text-right text-[12.5px] text-foreground/70 tabular-nums"
+                      >
+                        {value != null ? formatBRL(value) : "–"}
+                      </span>
+                    ))}
+                    <span
+                      className="flex items-center justify-end gap-1.5 font-heading text-sm font-medium tabular-nums"
+                      title={
+                        kitManualProfit != null
+                          ? `Preço manual · lucro de ${formatBRL(kitManualProfit)}`
+                          : undefined
+                      }
+                      style={
+                        kitManualProfit != null && kitManualProfit < 0
+                          ? { color: FAILURE_COLOR }
+                          : undefined
+                      }
+                    >
+                      {item.kitPrice != null && (
+                        <Pencil
+                          className="size-3 text-muted-foreground"
+                          aria-label="Preço manual"
+                        />
+                      )}
                       {resolved.priceMin != null
                         ? formatBRL(resolved.priceMin)
                         : "–"}

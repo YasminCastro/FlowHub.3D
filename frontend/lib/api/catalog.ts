@@ -13,7 +13,6 @@ import {
   CostContext,
   PrintItem,
   PrintPhoto,
-  PrintRecord,
   getDefaultRecord,
   ceilCents,
   costRows,
@@ -125,30 +124,6 @@ export async function deleteCatalogItem(id: string) {
 // ---------------------------------------------------------------------------
 // Cálculos
 
-/**
- * O registro guarda o preço do filamento do dia em que foi impresso. Para
- * vender, vale o preço atual do rolo; filamento excluído fica com o guardado.
- */
-function withCurrentFilamentPrices(
-  record: PrintRecord,
-  filaments: Filament[],
-): PrintRecord {
-  return {
-    ...record,
-    filaments: record.filaments.map((usage) => {
-      const current = filaments.find((f) => f.id === usage.filament.id);
-      if (!current) return usage;
-      return {
-        ...usage,
-        filament: {
-          ...usage.filament,
-          pricePerGram: toPrintFilament(current).pricePerGram,
-        },
-      };
-    }),
-  };
-}
-
 function withMargin(value: number, ctx: CostContext) {
   return value * (1 + ctx.settings.defaultMarginPercent / 100);
 }
@@ -156,9 +131,10 @@ function withMargin(value: number, ctx: CostContext) {
 /**
  * Preço sugerido de uma unidade vendida: custo do registro padrão no pior
  * cenário (cada filamento trocado pelo rolo mais caro em estoque do material,
- * já que o cliente pode escolher qualquer cor) mais a embalagem e a mão de
- * obra do preparo, com a margem padrão por cima. A embalagem só entra aqui:
- * é da venda, não da impressão.
+ * já que o cliente pode escolher qualquer cor) mais a mão de obra do preparo,
+ * com a margem padrão por cima, mais a embalagem pelo custo (sem margem).
+ * Fica custo + lucro + embalagem = calculado. A embalagem só entra aqui: é da
+ * venda, não da impressão.
  */
 export function suggestPrice(
   print: PrintItem,
@@ -167,15 +143,18 @@ export function suggestPrice(
 ) {
   const record = getDefaultRecord(print);
   if (!record) return null;
-  const current = withCurrentFilamentPrices(record, filaments);
+  // A mesma conta da página da impressão, para o custo bater nas duas telas.
   const inStock = filaments.filter(isInStock).map(toPrintFilament);
-  const printCost = getWorstCaseBreakdownPerUnit(current, inStock, ctx);
+  const printCost = getWorstCaseBreakdownPerUnit(record, inStock, ctx);
   const packaging = ceilCents(ctx.settings.packagingCost);
   const cost = ceilCents(printCost.total + packaging);
   const labor = ceilCents(
     (ctx.settings.prepMinutesPerPiece / 60) * ctx.settings.laborCostPerHour,
   );
-  const calculated = ceilCents(withMargin(cost + labor, ctx));
+  const calculated =
+    Math.round(
+      (ceilCents(withMargin(printCost.total + labor, ctx)) + packaging) * 100,
+    ) / 100;
   const pricing: VariantPricing = {
     print: printCost,
     packaging,
@@ -186,10 +165,10 @@ export function suggestPrice(
     calculated,
   };
   return {
-    grams: getPerUnit(current, ctx).grams,
-    cost,
+    grams: getPerUnit(record, ctx).grams,
+    cost: printCost.total,
     price: calculated,
-    packagingPrice: withMargin(packaging, ctx),
+    packagingPrice: packaging,
     pricing,
   };
 }
@@ -225,15 +204,21 @@ export type ResolvedVariant = CatalogVariant & {
   // null: a impressão foi excluída.
   print: PrintItem | null;
   grams: number | null;
-  // Custo de vender uma unidade: a impressão mais a embalagem.
+  // Custo da impressão por unidade, igual ao da página da impressão. A
+  // embalagem entra só no calculado.
   cost: number | null;
   calculated: number | null;
-  // Parte do calculado que é da embalagem (com margem); o kit desconta das
+  // Parte do calculado que é da embalagem (sem margem); o kit desconta das
   // peças e cobra uma vez só.
   packagingPrice: number | null;
   pricing: VariantPricing | null;
   // O que vale: o manual ou, sem ele, o calculado.
   price: number | null;
+  // Calculado menos o custo da impressão, a mão de obra e a embalagem: a
+  // margem. Custo + mão de obra + lucro + embalagem = calculado.
+  profit: number | null;
+  // O mesmo com o preço manual; null sem ele.
+  manualProfit: number | null;
 };
 
 export type CatalogColor = {
@@ -266,6 +251,15 @@ export function resolveVariant(
 ): ResolvedVariant {
   const print = prints.find((p) => p.id === variant.printItemId) ?? null;
   const suggestion = print ? suggestPrice(print, filaments, ctx) : null;
+  const price = variant.priceOverride ?? suggestion?.price ?? null;
+  const pricing = suggestion?.pricing ?? null;
+  const profitAt = (value: number | null) =>
+    value != null && pricing
+      ? Math.round(
+          (value - pricing.print.total - pricing.labor - pricing.packaging) *
+            100,
+        ) / 100
+      : null;
   return {
     ...variant,
     print,
@@ -273,8 +267,10 @@ export function resolveVariant(
     cost: suggestion?.cost ?? null,
     calculated: suggestion?.price ?? null,
     packagingPrice: suggestion?.packagingPrice ?? null,
-    pricing: suggestion?.pricing ?? null,
-    price: variant.priceOverride ?? suggestion?.price ?? null,
+    pricing,
+    price,
+    profit: profitAt(suggestion?.price ?? null),
+    manualProfit: profitAt(variant.priceOverride),
   };
 }
 
@@ -360,6 +356,25 @@ export function getKitCalculated(variants: ResolvedVariant[]) {
     0,
   );
   return pieces + (variants[0]?.packagingPrice ?? 0);
+}
+
+/** Linha de total do kit: as peças somadas, com uma embalagem só. */
+export function getKitTotals(variants: ResolvedVariant[]) {
+  const priced = variants.map((v) => v.pricing);
+  const calculated = getKitCalculated(variants);
+  if (calculated == null || priced.some((p) => p == null)) return null;
+  const sum = (pick: (p: VariantPricing) => number) =>
+    Math.round(priced.reduce((s, p) => s + pick(p!), 0) * 100) / 100;
+  const cost = sum((p) => p.print.total);
+  const labor = sum((p) => p.labor);
+  const packaging = priced[0]?.packaging ?? 0;
+  return {
+    cost,
+    labor,
+    packaging,
+    profit: Math.round((calculated - cost - labor - packaging) * 100) / 100,
+    calculated,
+  };
 }
 
 // ---------------------------------------------------------------------------
