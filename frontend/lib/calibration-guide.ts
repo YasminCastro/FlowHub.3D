@@ -2,6 +2,7 @@ import {
   CalibrationFilament,
   CalibrationPrinter,
   CalibrationValues,
+  SLICER_FULL_LABELS,
   Slicer,
 } from "@/lib/api/calibration";
 
@@ -30,11 +31,30 @@ export type GuideField = {
   target?: keyof CalibrationValues;
 };
 
-/** Texto igual nos dois fatiadores, ou um para cada. */
-export type SlicerText = string | Record<Slicer, string>;
+/** Família do guia: o Anycubic Slicer Next é baseado no Orca e segue os
+ * mesmos testes e menus. */
+export type SlicerFamily = "ORCA" | "CREALITY";
+
+export function slicerFamily(slicer: Slicer): SlicerFamily {
+  return slicer === "CREALITY" ? "CREALITY" : "ORCA";
+}
+
+/** Texto igual nas duas famílias, ou um para cada. */
+export type SlicerText = string | Record<SlicerFamily, string>;
 
 export function forSlicer(text: SlicerText, slicer: Slicer) {
-  return typeof text === "string" ? text : text[slicer];
+  return typeof text === "string" ? text : text[slicerFamily(slicer)];
+}
+
+/** Texto da família do fatiador, com "Orca Slicer" trocado pelo nome dele. */
+export function forSlicerFamily(
+  text: Partial<Record<SlicerFamily, string>>,
+  slicer: Slicer,
+) {
+  return text[slicerFamily(slicer)]?.replaceAll(
+    "Orca Slicer",
+    SLICER_FULL_LABELS[slicer],
+  );
 }
 
 export type GuideStep = {
@@ -49,11 +69,11 @@ export type GuideStep = {
   summarize?: (values: Record<string, string>) => string;
   howTo: (ctx: GuideContext) => string[];
   analyze: string[] | ((ctx: GuideContext) => string[]);
-  applyAt: Record<Slicer, string>;
+  applyAt: Record<SlicerFamily, string>;
   /** Instrução final, no lugar de "Onde aplicar" quando o passo tem. */
-  whatToDo?: Record<Slicer, string>;
+  whatToDo?: Record<SlicerFamily, string>;
   /** Dica em destaque, depois do bloco de valores. */
-  tip?: Partial<Record<Slicer, string>>;
+  tip?: Partial<Record<SlicerFamily, string>>;
   /** Trecho do vídeo de referência que mostra este passo. */
   video?: SlicerText;
 };
@@ -62,6 +82,8 @@ export type GuideStep = {
 export const GUIDE_VIDEOS: Record<Slicer, string> = {
   ORCA: "https://www.youtube.com/watch?v=gVU5If1VsAM",
   CREALITY: "https://www.youtube.com/watch?v=l8cSIx0D-L8",
+  // Baseado no Orca: o mesmo vídeo vale.
+  ANYCUBIC: "https://www.youtube.com/watch?v=gVU5If1VsAM",
 };
 
 export type MaterialDefaults = {
@@ -195,9 +217,9 @@ export const GUIDE_STEPS: GuideStep[] = [
         ? "a recomendação do fabricante"
         : "a faixa típica do material";
       const temps = `**Start Temp ${max} °C** e **End Temp ${min} °C**`;
-      return ctx.slicer === "ORCA"
+      return slicerFamily(ctx.slicer) === "ORCA"
         ? [
-            `No Orca Slicer, selecione um perfil genérico do mesmo material do filamento a ser calibrado (**${ctx.filament.type}**).`,
+            `No ${SLICER_FULL_LABELS[ctx.slicer]}, selecione um perfil genérico do mesmo material do filamento a ser calibrado (**${ctx.filament.type}**).`,
             "Vá no menu superior em **Calibration › Temperature**.",
             `Selecione o tipo de filamento como **${slicerFilamentType(ctx)}**.`,
             `Preencha as configurações com ${source}: ${temps}.`,
@@ -211,7 +233,7 @@ export const GUIDE_STEPS: GuideStep[] = [
           ];
     },
     analyze: (ctx) =>
-      ctx.slicer === "ORCA"
+      slicerFamily(ctx.slicer) === "ORCA"
         ? [
             "Observe: pontes (bridging), cantos, fiapos (stringing) e paredes externas.",
             "Escolha a temperatura que entregar a melhor combinação de acabamento.",
@@ -252,7 +274,7 @@ export const GUIDE_STEPS: GuideStep[] = [
       },
     ],
     howTo: (ctx) =>
-      ctx.slicer === "ORCA"
+      slicerFamily(ctx.slicer) === "ORCA"
         ? [
             `Selecione o perfil de filamento com a temperatura já ajustada (bico **${guideNozzleTemp(ctx)} °C**).`,
             "Acesse **Calibration › Max Flow Rate**.",
@@ -263,11 +285,11 @@ export const GUIDE_STEPS: GuideStep[] = [
             "Imprima a peça de teste (leva cerca de **40 min**).",
           ],
     analyze: (ctx) =>
-      ctx.slicer === "ORCA"
+      slicerFamily(ctx.slicer) === "ORCA"
         ? [
             "Procure a altura onde começam os primeiros defeitos de extrusão ou perda de brilho no plástico.",
             "Meça com um paquímetro a distância (em mm) da base até a altura do defeito.",
-            "No Orca Slicer (na aba Preview), altere a visualização superior para Flow.",
+            `No ${SLICER_FULL_LABELS[ctx.slicer]} (na aba Preview), altere a visualização superior para Flow.`,
             "Arraste a barra vertical até a altura medida para ver a vazão referente àquele ponto.",
             "Subtraia de 10% a 20% desse valor para ter uma margem de segurança.",
           ]
@@ -311,7 +333,7 @@ export const GUIDE_STEPS: GuideStep[] = [
       const extruder = ctx.printer?.extrusionType
         ? `(a ${ctx.printer.name} é **${ctx.printer.extrusionType}**)`
         : "(**Direct Drive** ou **Bowden**)";
-      return ctx.slicer === "ORCA"
+      return slicerFamily(ctx.slicer) === "ORCA"
         ? [
             "Vá em **Calibration › Pressure Advance**.",
             `Selecione o seu tipo de extrusor ${extruder}.`,
@@ -326,7 +348,7 @@ export const GUIDE_STEPS: GuideStep[] = [
           ];
     },
     analyze: (ctx) =>
-      ctx.slicer === "ORCA"
+      slicerFamily(ctx.slicer) === "ORCA"
         ? [
             "Olhe para as quinas das linhas impressas.",
             "Encontre a linha onde a quina está o mais reta e afiada possível, sem falhas ou excesso de plástico.",
@@ -366,7 +388,7 @@ export const GUIDE_STEPS: GuideStep[] = [
       },
     ],
     howTo: (ctx) =>
-      ctx.slicer === "ORCA"
+      slicerFamily(ctx.slicer) === "ORCA"
         ? [
             "Vá em **Calibration › Flow Rate › YOLO (Recommended)**.",
             "Imprima as amostras numéricas.",
@@ -376,7 +398,7 @@ export const GUIDE_STEPS: GuideStep[] = [
             "**Passo 2.2 (ajuste fino):** vá em **Calibração › Fluxo › Passo 2**, selecione o número da peça escolhida no Passo 2.1 e imprima o novo teste.",
           ],
     analyze: (ctx) =>
-      ctx.slicer === "ORCA"
+      slicerFamily(ctx.slicer) === "ORCA"
         ? [
             "Procure o quadrado com a superfície superior mais lisa e uniforme, sem ranhuras (excesso) e sem frestas entre as linhas (falta).",
             "Some/subtraia o valor escolhido ao seu Flow Ratio atual (ex.: se o atual é 1.0 e a melhor amostra foi -0.02, o novo valor será 0.98).",
@@ -446,7 +468,7 @@ export const GUIDE_STEPS: GuideStep[] = [
       ];
     },
     analyze: (ctx) =>
-      ctx.slicer === "ORCA"
+      slicerFamily(ctx.slicer) === "ORCA"
         ? [
             "O teste imprime anéis empilhados. Identifique a altura do primeiro anel onde o stringing desaparece completamente.",
             "Verifique no fatiador qual comprimento de retração corresponde àquela altura.",
@@ -473,14 +495,14 @@ export const GUIDE_STEPS: GuideStep[] = [
 ];
 
 // Cada fatiador tem a sua ordem de testes.
-const GUIDE_STEP_ORDER: Record<Slicer, GuideStepId[]> = {
+const GUIDE_STEP_ORDER: Record<SlicerFamily, GuideStepId[]> = {
   ORCA: ["temperature", "maxFlow", "pressureAdvance", "flow", "retraction"],
   CREALITY: ["temperature", "flow", "pressureAdvance", "retraction", "maxFlow"],
 };
 
 /** Testes do guia na ordem do fatiador. */
 export function guideSteps(slicer: Slicer): GuideStep[] {
-  return GUIDE_STEP_ORDER[slicer].map(
+  return GUIDE_STEP_ORDER[slicerFamily(slicer)].map(
     (id) => GUIDE_STEPS.find((s) => s.id === id)!,
   );
 }

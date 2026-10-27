@@ -13,7 +13,7 @@ import {
   ValidateIf,
 } from 'class-validator';
 
-export const CALIBRATION_SLICERS = ['ORCA', 'CREALITY'] as const;
+export const CALIBRATION_SLICERS = ['ORCA', 'CREALITY', 'ANYCUBIC'] as const;
 export type CalibrationSlicerInput = (typeof CALIBRATION_SLICERS)[number];
 
 export const CALIBRATION_NOTES_MAX_LENGTH = 2000;

@@ -423,7 +423,9 @@ export default function CalibrationsPage() {
           <Stat
             label="Fatiadores"
             value={usedSlicers.length}
-            detail={usedSlicers.map((s) => SLICER_LABELS[s]).join(" e ")}
+            detail={new Intl.ListFormat("pt-BR").format(
+              usedSlicers.map((s) => SLICER_LABELS[s]),
+            )}
           />
         </div>
       )}

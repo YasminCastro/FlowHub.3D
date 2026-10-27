@@ -27,6 +27,7 @@ const EQUIPAMENT_TABS = [
 const CALIBRATION_TABS = [
   { title: "Calibrações", url: "/dashboard/calibracoes" },
   { title: "Por fatiador", url: "/dashboard/fatiadores" },
+  { title: "Flushing", url: "/dashboard/flushing" },
 ];
 
 // Compara por segmento: "/dashboard/fila" não pode casar com

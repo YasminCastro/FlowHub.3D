@@ -144,7 +144,13 @@ export const FAILURE_REASONS = [
   "Acabou filamento",
 ];
 
-export const SLICERS = ["Orca", "Bambu Studio", "Cura", "PrusaSlicer"];
+export const SLICERS = [
+  "Orca",
+  "Bambu Studio",
+  "Cura",
+  "PrusaSlicer",
+  "Anycubic Slicer Next",
+];
 
 // Ponto de partida quando o usuário abre a configuração do fatiador.
 export const DEFAULT_SLICER_SETTINGS: SlicerSettings = {

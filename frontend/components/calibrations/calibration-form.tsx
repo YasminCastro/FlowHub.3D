@@ -137,7 +137,7 @@ const calibrationFormSchema = z
       .object({ brandId: z.string(), brandName: z.string(), type: z.string() })
       .nullable(),
     printerId: z.string().min(1, "Escolha a impressora."),
-    slicer: z.enum(["ORCA", "CREALITY"]),
+    slicer: z.enum(["ORCA", "CREALITY", "ANYCUBIC"]),
     flow: numberField({ min: 0.5, max: 1.5, required: "Informe o fluxo." }),
     nozzleTempInitial: numberField(nozzleRule),
     nozzleTemp: numberField(nozzleRule),

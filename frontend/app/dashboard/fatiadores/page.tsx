@@ -57,6 +57,7 @@ import {
   GuideStepId,
   filamentTemps,
   forSlicer,
+  forSlicerFamily,
   formatTempRange,
   middleOf,
 } from "@/lib/calibration-guide";
@@ -847,21 +848,21 @@ export default function SlicerCalibrationPage() {
                 <p className="text-xs text-foreground/45">
                   O que fazer:{" "}
                   <span className="text-foreground/72">
-                    {step.whatToDo[slicer]}
+                    {forSlicerFamily(step.whatToDo, slicer)}
                   </span>
                 </p>
               ) : (
                 <p className="text-xs text-foreground/45">
                   Onde aplicar no fatiador:{" "}
                   <span className="text-foreground/72">
-                    {step.applyAt[slicer]}
+                    {forSlicerFamily(step.applyAt, slicer)}
                   </span>{" "}
                   — depois salve o perfil com o nome do rolo.
                 </p>
               )}
             </form>
 
-            {step.tip?.[slicer] && (
+            {step.tip && forSlicerFamily(step.tip, slicer) && (
               <div className="flex gap-2.5 rounded-md bg-[#e8c547]/8 px-3.5 py-3 text-[13px] leading-relaxed shadow-[inset_0_0_0_1px_color-mix(in_srgb,#e8c547_30%,transparent)]">
                 <Lightbulb
                   className="mt-0.5 size-4 shrink-0 text-[#e8c547]"
@@ -871,7 +872,7 @@ export default function SlicerCalibrationPage() {
                   <span className="font-medium text-[#e8c547]">
                     Dica de Ouro:
                   </span>{" "}
-                  {step.tip[slicer]}
+                  {forSlicerFamily(step.tip, slicer)}
                 </span>
               </div>
             )}

@@ -21,6 +21,7 @@ import { PrintQueueModule } from './print-queue/print-queue.module.js';
 import { CatalogModule } from './catalog/catalog.module.js';
 import { CalibrationModule } from './calibration/calibration.module.js';
 import { CalibrationGuideModule } from './calibration-guide/calibration-guide.module.js';
+import { FlushingModule } from './flushing/flushing.module.js';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { CalibrationGuideModule } from './calibration-guide/calibration-guide.mo
     CatalogModule,
     CalibrationModule,
     CalibrationGuideModule,
+    FlushingModule,
   ],
   controllers: [AppController, UserController],
   providers: [

@@ -40,11 +40,12 @@ type CalibrationWithRelations = Prisma.CalibrationGetPayload<{
 // Quantas impressões o detalhe lista.
 export const CALIBRATION_PRINTS_LIMIT = 20;
 
-// O fatiador da impressão é texto livre ("Orca", "Creality Print"); a
-// calibração casa por este trecho do nome.
+// O fatiador da impressão é texto livre ("Orca", "Creality Print",
+// "Anycubic Slicer Next"); a calibração casa por este trecho do nome.
 const SLICER_KEYWORDS: Record<CalibrationSlicerInput, string> = {
   ORCA: 'orca',
   CREALITY: 'creality',
+  ANYCUBIC: 'anycubic',
 };
 
 const CONFLICT_MESSAGE =

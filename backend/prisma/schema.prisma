@@ -41,6 +41,7 @@ model User {
   catalogItems      CatalogItem[]
   calibrations      Calibration[]
   calibrationGuides CalibrationGuideProgress[]
+  flushPairs        FlushPair[]
 }
 
 model Category {
@@ -82,6 +83,7 @@ model Printer {
   printQueueEntries PrintQueueEntry[]
   calibrations      Calibration[]
   calibrationGuides CalibrationGuideProgress[]
+  flushPairs        FlushPair[]
 
   @@unique([userId, name])
 }
@@ -218,6 +220,8 @@ model Filament {
   queueUsages       PrintQueueFilament[]
   calibrations      Calibration[]
   calibrationGuides CalibrationGuideProgress[]
+  flushPairsAsA     FlushPair[]                @relation("FlushPairA")
+  flushPairsAsB     FlushPair[]                @relation("FlushPairB")
 
   @@unique([userId, brandId, type, colorName])
   @@index([brandId])
@@ -619,6 +623,7 @@ model CatalogPhoto {
 enum CalibrationSlicer {
   ORCA
   CREALITY
+  ANYCUBIC
 }
 
 model Calibration {
@@ -711,5 +716,39 @@ model CalibrationGuideProgress {
 
   @@unique([userId, filamentId, printerId, slicer])
   @@index([filamentId])
+  @@index([printerId])
+}
+
+// Flushing volumes da troca entre dois filamentos, numa impressora e num
+// fatiador: a tabela do fatiador só para o par. A direção conta (escuro →
+// claro pede mais purga que claro → escuro), então cada lado tem o seu
+// volume e o seu Color Multiplier. Um registro por par: A + B e B + A são o
+// mesmo, o serviço confere as duas ordens. Um CHECK na migration impede A = B.
+// Cascade: sem um dos filamentos ou a impressora o par não significa nada.
+model FlushPair {
+  id               String            @id @default(uuid())
+  slicer           CalibrationSlicer
+  filamentAId      String
+  filamentA        Filament          @relation("FlushPairA", fields: [filamentAId], references: [id], onDelete: Cascade)
+  filamentBId      String
+  filamentB        Filament          @relation("FlushPairB", fields: [filamentBId], references: [id], onDelete: Cascade)
+  // Volume purgado na troca, em mm³. Opcionais: dá para salvar um lado só.
+  volumeAToB       Int?
+  volumeBToA       Int?
+  // "Color Multiplier" de cada linha da tabela.
+  colorMultiplierA Float?
+  colorMultiplierB Float?
+  // "Multiplier" da tabela.
+  multiplier       Float?
+  printerId        String
+  printer          Printer           @relation(fields: [printerId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@unique([userId, filamentAId, filamentBId, printerId, slicer])
+  @@index([filamentAId])
+  @@index([filamentBId])
   @@index([printerId])
 }

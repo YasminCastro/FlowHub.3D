@@ -35,6 +35,7 @@ import {
   Calibration,
   CalibrationFilament,
   CalibrationValues,
+  SLICERS,
   SLICER_LABELS,
   calibrationSubject,
   findCalibrationFor,
@@ -339,12 +340,16 @@ export default function CalibrationDetailPage() {
   }
 
   const versionNumber = calibration.history.length + 1;
-  const otherSlicer = calibration.slicer === "ORCA" ? "CREALITY" : "ORCA";
-  const sibling = findCalibrationFor(
-    all,
-    targetOf(calibration),
-    calibration.printer.id,
-    otherSlicer,
+  const otherSlicers = SLICERS.filter((s) => s !== calibration.slicer).map(
+    (slicer) => ({
+      slicer,
+      sibling: findCalibrationFor(
+        all,
+        targetOf(calibration),
+        calibration.printer.id,
+        slicer,
+      ),
+    }),
   );
   // Específica de um filamento que também tem genérica: ela vence.
   const overridden = calibration.filament
@@ -471,30 +476,34 @@ export default function CalibrationDetailPage() {
         <section className="flex flex-col gap-3.25">
           <CalLabel>
             {subject.isGeneric
-              ? "Mesma genérica no outro fatiador"
-              : "Mesmo filamento no outro fatiador"}
+              ? "Mesma genérica nos outros fatiadores"
+              : "Mesmo filamento nos outros fatiadores"}
           </CalLabel>
-          {sibling ? (
-            <Link
-              href={`/dashboard/calibracoes/${sibling.id}`}
-              className={cn(actionClass, "justify-between")}
-            >
-              <span className="flex flex-col items-start gap-0.75">
-                <span className="text-[13px]">{SLICER_LABELS[sibling.slicer]}</span>
-                <span className="text-[11.5px] text-foreground/50 tabular-nums">
-                  {summarizeValues(sibling)}
+          {otherSlicers.map(({ slicer, sibling }) =>
+            sibling ? (
+              <Link
+                key={slicer}
+                href={`/dashboard/calibracoes/${sibling.id}`}
+                className={cn(actionClass, "justify-between")}
+              >
+                <span className="flex flex-col items-start gap-0.75">
+                  <span className="text-[13px]">{SLICER_LABELS[slicer]}</span>
+                  <span className="text-[11.5px] text-foreground/50 tabular-nums">
+                    {summarizeValues(sibling)}
+                  </span>
                 </span>
-              </span>
-              <ArrowUpRight className="size-3.25!" />
-            </Link>
-          ) : (
-            <Link
-              href={`/dashboard/calibracoes/new?from=${calibration.id}&slicer=${otherSlicer}`}
-              className={actionClass}
-            >
-              <Plus />
-              Calibrar no {SLICER_LABELS[otherSlicer]}
-            </Link>
+                <ArrowUpRight className="size-3.25!" />
+              </Link>
+            ) : (
+              <Link
+                key={slicer}
+                href={`/dashboard/calibracoes/new?from=${calibration.id}&slicer=${slicer}`}
+                className={actionClass}
+              >
+                <Plus />
+                Calibrar no {SLICER_LABELS[slicer]}
+              </Link>
+            ),
           )}
         </section>
 

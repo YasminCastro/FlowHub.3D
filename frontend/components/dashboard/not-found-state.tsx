@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   ArrowLeftIcon,
+  BlendIcon,
   GaugeIcon,
   ImagesIcon,
   LayersIcon,
@@ -86,6 +87,15 @@ const RESOURCES = {
     icon: LayersIcon,
     newLabel: "Cadastrar filamento",
     newHref: "/dashboard/filamentos/new",
+  },
+  flushing: {
+    title: "Este registro de flushing não existe",
+    subject: "O registro",
+    listLabel: "Ver todos os registros de flushing",
+    listHref: "/dashboard/flushing",
+    icon: BlendIcon,
+    newLabel: "Novo flushing",
+    newHref: "/dashboard/flushing/new",
   },
   calibracoes: {
     title: "Esta calibração não existe",

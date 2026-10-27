@@ -8,18 +8,20 @@ import { listPrinters } from "./printer";
 // todas as cores de uma marca e material; a específica de um filamento vence
 // a genérica dele.
 
-export type Slicer = "ORCA" | "CREALITY";
+export type Slicer = "ORCA" | "CREALITY" | "ANYCUBIC";
 
-export const SLICERS: Slicer[] = ["ORCA", "CREALITY"];
+export const SLICERS: Slicer[] = ["ORCA", "CREALITY", "ANYCUBIC"];
 
 export const SLICER_LABELS: Record<Slicer, string> = {
   ORCA: "Orca",
   CREALITY: "Creality",
+  ANYCUBIC: "Anycubic",
 };
 
 export const SLICER_FULL_LABELS: Record<Slicer, string> = {
   ORCA: "Orca Slicer",
   CREALITY: "Creality Print",
+  ANYCUBIC: "Anycubic Slicer Next",
 };
 
 // A partir daqui a idade da calibração começa a pesar na lista.

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  BlendIcon,
   GaugeIcon,
   ImagesIcon,
   LayoutGridIcon,
@@ -86,6 +87,11 @@ const navGroups = [
         title: "Por Fatiador",
         url: "/dashboard/fatiadores",
         icon: SlidersHorizontalIcon,
+      },
+      {
+        title: "Flushing",
+        url: "/dashboard/flushing",
+        icon: BlendIcon,
       },
     ],
   },
