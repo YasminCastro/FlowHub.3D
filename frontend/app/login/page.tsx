@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -32,7 +32,7 @@ type LoginValues = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login } = useAuth();
+  const { login, accessToken, isLoading } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,6 +42,16 @@ export default function LoginPage() {
   });
 
   const isSubmitting = form.formState.isSubmitting;
+
+  useEffect(() => {
+    if (!isLoading && accessToken && !isSubmitting) {
+      router.replace("/dashboard");
+    }
+  }, [isLoading, accessToken, isSubmitting, router]);
+
+  if (isLoading || (accessToken && !isSubmitting)) {
+    return null;
+  }
 
   async function onSubmit(values: LoginValues) {
     setError(null);
