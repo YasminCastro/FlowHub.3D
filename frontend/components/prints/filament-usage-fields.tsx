@@ -51,7 +51,8 @@ export function usageDraftFrom(
     type: filament.type,
     brandName: filament.brandName,
     filamentId: isDeletedFilament(filament) && !keepDeleted ? "" : filament.id,
-    grams: formatDecimalInput(grams, 1),
+    // 0: gramas ainda não informadas (a fila deixa para depois).
+    grams: grams ? formatDecimalInput(grams, 1) : "",
   };
 }
 

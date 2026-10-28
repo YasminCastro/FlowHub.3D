@@ -43,8 +43,9 @@ export class QueueFilamentDto {
   @IsUUID()
   filamentId!: string;
 
+  // 0: filamento escolhido, gramas ainda não informadas.
   @IsNumber()
-  @Min(0.01)
+  @Min(0)
   @Max(PRINT_MAX_GRAMS)
   grams!: number;
 }

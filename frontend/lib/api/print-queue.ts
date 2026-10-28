@@ -373,11 +373,16 @@ export function getEntryGrams(entry: Pick<QueueEntry, "filaments">) {
   return entry.filaments.reduce((sum, usage) => sum + usage.grams, 0);
 }
 
-// Filamento e tempo são opcionais ao adicionar; sem eles não há orçamento.
+// Filamento, gramas e tempo são opcionais ao adicionar; sem eles não há
+// orçamento (sem as gramas de algum filamento, ele sairia mais barato).
 export function hasEstimate(
   entry: Pick<QueueEntry, "filaments" | "totalMinutes">,
 ) {
-  return entry.filaments.length > 0 && entry.totalMinutes > 0;
+  return (
+    entry.filaments.length > 0 &&
+    entry.filaments.every((usage) => usage.grams > 0) &&
+    entry.totalMinutes > 0
+  );
 }
 
 export type QueueQuote = {

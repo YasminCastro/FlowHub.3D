@@ -69,6 +69,7 @@ import {
   QueuePosition,
   addToQueue,
   getQueueEntry,
+  hasEstimate,
   quoteEntry,
   updateQueueEntry,
 } from "@/lib/api/print-queue";
@@ -279,10 +280,7 @@ export function QueueEntryForm({ entryId }: { entryId?: string }) {
     if (draft.source === "item" && !item) return "Escolha a impressão.";
     if (draft.source === "new" && !name) return "Dê um nome para a peça.";
     if (!printer) return "Escolha a impressora.";
-    // Filamento e tempo podem ficar para depois; escolhido o filamento,
-    // as gramas dele precisam vir junto.
-    if (usages.some((u) => u.grams <= 0))
-      return "Informe as gramas de cada filamento.";
+    // Filamento, gramas e tempo podem ficar para depois.
     return null;
   }
 
@@ -653,7 +651,7 @@ export function QueueEntryForm({ entryId }: { entryId?: string }) {
           </div>
         </div>
         <Separator />
-        {costs && quote && grams > 0 && minutes > 0 ? (
+        {costs && quote && hasEstimate(quoteInput) ? (
           <>
             <div className="flex flex-col gap-2 text-[12.5px] text-muted-foreground tabular-nums">
               {costRows(quote.breakdown, costs).map(([label, value]) => (
@@ -696,7 +694,7 @@ export function QueueEntryForm({ entryId }: { entryId?: string }) {
           <p className="text-[12px] text-muted-foreground">
             {costsError ??
               (costs
-                ? "Com filamento e tempo, o orçamento aparece aqui. Dá para preencher depois, editando o item."
+                ? "Com filamento, gramas e tempo, o orçamento aparece aqui. Dá para preencher depois, editando o item."
                 : "Carregando custos...")}
           </p>
         )}

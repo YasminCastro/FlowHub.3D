@@ -235,17 +235,19 @@ export function QueueCompleteForm({ entryId }: { entryId: string }) {
   const hasStoppedAt = stoppedAt.trim() !== "" && stoppedPercent > 0;
   const stoppedFraction = stoppedPercent / 100;
 
-  // As gramas reais se dividem entre os filamentos na proporção do previsto.
+  // As gramas reais se dividem entre os filamentos na proporção do previsto;
+  // se algum ficou sem gramas na fila, em partes iguais.
   const typedGrams = parseDecimal(realGrams);
   const spentGrams = usesStoppedAt
     ? plannedGrams * stoppedFraction
     : realGrams.trim()
       ? typedGrams
       : plannedGrams;
+  const hasAllPlannedGrams = plannedUsages.every((u) => u.grams > 0);
   const recordUsages = plannedUsages.map((u) => ({
     ...u,
     grams:
-      plannedGrams > 0
+      hasAllPlannedGrams && plannedGrams > 0
         ? (u.grams / plannedGrams) * spentGrams
         : spentGrams / Math.max(1, plannedUsages.length),
   }));

@@ -447,7 +447,7 @@ export default function QueueEntryPage() {
                     {describePrintFilament(usage.filament)}
                   </span>
                   <span className="ml-auto text-foreground/70 tabular-nums">
-                    {formatGrams(usage.grams)}
+                    {usage.grams ? formatGrams(usage.grams) : "–"}
                   </span>
                 </div>
               ))}

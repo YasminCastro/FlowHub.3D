@@ -66,7 +66,7 @@ import { cn, formatBRL, formatDatePtBR } from "@/lib/utils";
 const ALL_PRINTERS = "all";
 
 const QUEUE_COLUMNS =
-  "grid-cols-[18px_22px_44px_minmax(160px,1.6fr)_minmax(110px,1fr)_92px_110px_50px_64px_76px_84px_200px]";
+  "grid-cols-[18px_40px_44px_minmax(160px,1.6fr)_minmax(110px,1fr)_92px_110px_50px_64px_76px_84px_200px]";
 
 const SORT_OPTIONS: { value: QueueSort; label: string }[] = [
   { value: "manual", label: "Manual" },
@@ -119,6 +119,53 @@ function ColumnLabel({
     >
       {children}
     </span>
+  );
+}
+
+// Número da posição que dá para editar: digita e confirma com Enter ou ao
+// sair do campo; Esc desfaz.
+function PositionInput({
+  position,
+  max,
+  label,
+  onCommit,
+}: {
+  position: number;
+  max: number;
+  label: string;
+  onCommit: (position: number) => void;
+}) {
+  const [value, setValue] = useState(String(position));
+
+  function commit() {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isNaN(parsed) || parsed === position) {
+      setValue(String(position));
+      return;
+    }
+    onCommit(parsed);
+    setValue(String(Math.min(Math.max(parsed, 1), max)));
+  }
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      aria-label={label}
+      title="Digite a posição e aperte Enter"
+      value={value}
+      onChange={(e) => setValue(e.target.value.replace(/\D/g, ""))}
+      onFocus={(e) => e.target.select()}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          setValue(String(position));
+          e.currentTarget.blur();
+        }
+      }}
+      className="h-6 w-9 rounded-sm border border-transparent bg-transparent text-center text-xs text-muted-foreground tabular-nums transition-colors hover:border-border focus:border-brand focus:text-foreground focus:outline-none"
+    />
   );
 }
 
@@ -321,6 +368,18 @@ export default function PrintQueuePage() {
     persistOrder(next);
   }
 
+  // Leva o item para a posição digitada (1 é o primeiro); fora do intervalo
+  // vai para a ponta mais próxima.
+  function moveTo(id: string, position: number) {
+    const from = pending.findIndex((e) => e.id === id);
+    const to = Math.min(Math.max(position, 1), pending.length) - 1;
+    if (from < 0 || from === to) return;
+    const next = [...pending];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    persistOrder(next);
+  }
+
   function onHandleKey(e: KeyboardEvent, id: string) {
     if (e.key === "ArrowUp" || e.key === "ArrowDown") {
       e.preventDefault();
@@ -400,7 +459,7 @@ export default function PrintQueuePage() {
 
     return (
       <div className="overflow-x-auto">
-        <div className="flex min-w-[1146px] flex-col" role="list">
+        <div className="flex min-w-291 flex-col" role="list">
           <div
             className={cn(
               "grid items-center gap-3 py-2",
@@ -480,9 +539,19 @@ export default function PrintQueuePage() {
                 >
                   <GripVertical className="size-3.75" aria-hidden="true" />
                 </button>
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  {position}
-                </span>
+                {canDrag ? (
+                  <PositionInput
+                    key={position}
+                    position={position}
+                    max={pending.length}
+                    label={`Posição de ${entry.name} na fila`}
+                    onCommit={(to) => moveTo(entry.id, to)}
+                  />
+                ) : (
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {position}
+                  </span>
+                )}
                 {photo ? (
                   <FramedPhoto photo={photo} className="h-9 w-11 rounded-sm" />
                 ) : (
@@ -614,7 +683,8 @@ export default function PrintQueuePage() {
       <div>
         <h1 className="text-4xl font-bold">Fila de impressão</h1>
         <p className="text-sm text-muted-foreground">
-          O que vai imprimir, na ordem. Arraste para mudar a prioridade.
+          O que vai imprimir, na ordem. Arraste ou digite a posição para mudar
+          a prioridade.
         </p>
       </div>
 
