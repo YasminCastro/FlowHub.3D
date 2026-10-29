@@ -1,0 +1,21 @@
+# HTTPS na frente do frontend e do backend, nas mesmas portas de antes.
+# SERVER_HOST vem do .env (IP do servidor, ou localhost para teste).
+# "tls internal": o Caddy assina os certificados com uma CA própria, já que
+# não há domínio público para o Let's Encrypt validar. O certificado raiz
+# dessa CA precisa ser instalado nas máquinas que acessam (ver EXECUTANDO.md).
+{
+	# Sem domínio público não há porta 80/443 para redirecionar.
+	auto_https disable_redirects
+	# Não tenta instalar a CA no trust store do próprio container.
+	skip_install_trust
+}
+
+https://{$SERVER_HOST}:3009 {
+	tls internal
+	reverse_proxy frontend:3009
+}
+
+https://{$SERVER_HOST}:3008 {
+	tls internal
+	reverse_proxy backend:3008
+}

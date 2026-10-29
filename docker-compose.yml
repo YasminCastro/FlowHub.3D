@@ -2,19 +2,21 @@
 #   1. cp .env.example .env                                  (URLs públicas)
 #   2. cp backend/.env.production.example backend/.env.production   (segredos)
 #   3. docker compose up -d --build
+#   4. instale o certificado raiz do Caddy nas máquinas (ver EXECUTANDO.md)
 services:
   backend:
     build: ./backend
     restart: unless-stopped
     env_file: ./backend/.env.production
     environment:
-      PORT: 3001
+      PORT: 3008
       FRONTEND_URL: ${FRONTEND_URL:?defina FRONTEND_URL no .env}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
     volumes:
       - uploads:/app/uploads
-    ports:
-      - "3001:3001"
+    # Só o Caddy acessa; quem está de fora entra por HTTPS nas mesmas portas.
+    expose:
+      - "3008"
 
   frontend:
     build:
@@ -24,8 +26,28 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
+    expose:
+      - "3009"
+
+  caddy:
+    image: caddy:2.8
+    restart: unless-stopped
+    depends_on:
+      - frontend
+      - backend
+    environment:
+      SERVER_HOST: ${SERVER_HOST:?defina SERVER_HOST no .env}
     ports:
-      - "3000:3000"
+      - "3008:3008"
+      - "3009:3009"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Guarda a CA interna: se este volume for apagado, uma CA nova é gerada
+      # e o certificado raiz precisa ser reinstalado em todas as máquinas.
+      - caddy_data:/data
+      - caddy_config:/config
 
 volumes:
   uploads:
+  caddy_data:
+  caddy_config:
