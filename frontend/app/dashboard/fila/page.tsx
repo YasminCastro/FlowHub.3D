@@ -399,15 +399,17 @@ export default function PrintQueuePage() {
         );
       } else {
         const started = await startQueueEntry(entry.id);
-        setPending((prev) =>
-          prev.map((e) =>
-            e.id === started.id
-              ? started
-              : e.startedAt && e.printer.id === started.printer.id
+        // O backend leva o item para o topo da fila.
+        setPending((prev) => [
+          started,
+          ...prev
+            .filter((e) => e.id !== started.id)
+            .map((e) =>
+              e.startedAt && e.printer.id === started.printer.id
                 ? { ...e, startedAt: null }
                 : e,
-          ),
-        );
+            ),
+        ]);
       }
     } catch (err) {
       setError(

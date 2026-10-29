@@ -510,6 +510,9 @@ describe('PrintQueueService', () => {
     beforeEach(() => {
       prisma.printQueueEntry.findFirst.mockResolvedValue(entryRow());
       prisma.printQueueEntry.updateMany.mockResolvedValue({ count: 1 });
+      prisma.printQueueEntry.aggregate.mockResolvedValue({
+        _min: { position: 0 },
+      });
       prisma.printQueueEntry.update.mockImplementation((args) =>
         Promise.resolve(
           entryRow((args as { data: Record<string, unknown> }).data),
@@ -517,7 +520,7 @@ describe('PrintQueueService', () => {
       );
     });
 
-    it('marks the entry and frees the printer from the previous one', async () => {
+    it('marks the entry, moves it to the top and frees the printer from the previous one', async () => {
       const result = await service.startEntry(entryId, userId);
 
       // Só os pendentes desta impressora, menos o próprio item.
@@ -534,6 +537,8 @@ describe('PrintQueueService', () => {
       expect(dataOf(prisma.printQueueEntry.update).startedAt).toBeInstanceOf(
         Date,
       );
+      // Antes do primeiro pendente.
+      expect(dataOf(prisma.printQueueEntry.update).position).toBe(-1);
       expect(prisma.$transaction).toHaveBeenCalled();
       expect(result.data.startedAt).toBeInstanceOf(Date);
     });

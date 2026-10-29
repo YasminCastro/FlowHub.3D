@@ -435,8 +435,18 @@ export class PrintQueueService {
     return (last._max.position ?? -1) + 1;
   }
 
-  // Marca que o item está na impressora agora. Cada impressora imprime um
-  // de cada vez: o que estava nela antes perde a marcação.
+  // Posição antes de todos os pendentes.
+  private async firstPosition(userId: string) {
+    const first = await this.prisma.printQueueEntry.aggregate({
+      where: { userId, completedAt: null },
+      _min: { position: true },
+    });
+    return (first._min.position ?? 1) - 1;
+  }
+
+  // Marca que o item está na impressora agora e o leva para o topo da fila.
+  // Cada impressora imprime um de cada vez: o que estava nela antes perde a
+  // marcação.
   async startEntry(entryId: string, userId: string) {
     const entry = await this.findOwnedEntry(entryId, userId, {
       pendingOnly: true,
@@ -446,6 +456,7 @@ export class PrintQueueService {
         'Escolha a impressora do item antes de iniciar.',
       );
     }
+    const position = await this.firstPosition(userId);
 
     const [, started] = await this.prisma.$transaction([
       this.prisma.printQueueEntry.updateMany({
@@ -460,7 +471,7 @@ export class PrintQueueService {
       }),
       this.prisma.printQueueEntry.update({
         where: { id: entryId },
-        data: { startedAt: new Date() },
+        data: { startedAt: new Date(), position },
         omit: { userId: true },
         include: entryInclude,
       }),
