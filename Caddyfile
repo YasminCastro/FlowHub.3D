@@ -8,6 +8,9 @@
 	auto_https disable_redirects
 	# Não tenta instalar a CA no trust store do próprio container.
 	skip_install_trust
+	# Acesso por IP não manda SNI no handshake; sem isto o Caddy não sabe
+	# qual certificado entregar e recusa a conexão.
+	default_sni {$SERVER_HOST}
 }
 
 https://{$SERVER_HOST}:3009 {
