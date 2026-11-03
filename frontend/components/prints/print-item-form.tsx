@@ -11,7 +11,13 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { ReactNode, useEffect, useRef, useState } from "react";
+import {
+  ReactNode,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -321,6 +327,50 @@ function draftFromCopy(source: PrintItem, record: PrintRecord): Draft {
   };
 }
 
+// Rascunho do formulário: se a aba fechar ou o usuário sair antes de salvar,
+// o que já foi preenchido volta quando ele abrir o formulário de novo. Cada
+// ponto de partida (em branco, derivado de X, cópia de Y) tem o seu. As fotos
+// não entram: arquivos não cabem no localStorage.
+const DRAFT_KEY = "impressao:rascunho";
+
+function draftKey(
+  copyParam: string | null,
+  parentParam: string | null,
+  recordParam: string | null,
+) {
+  const source = copyParam
+    ? `:copia:${copyParam}`
+    : parentParam
+      ? `:derivado:${parentParam}`
+      : "";
+  return `${DRAFT_KEY}${source}${source && recordParam ? `:${recordParam}` : ""}`;
+}
+
+function loadStoredDraft(key: string): Draft | null {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? { ...EMPTY_DRAFT, ...(JSON.parse(raw) as Partial<Draft>) } : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeDraft(key: string, draft: Draft) {
+  try {
+    localStorage.setItem(key, JSON.stringify(draft));
+  } catch {
+    // Sem localStorage (aba anônima bloqueada): segue sem rascunho.
+  }
+}
+
+function clearStoredDraft(key: string) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Idem.
+  }
+}
+
 function Step({
   n,
   title,
@@ -366,21 +416,55 @@ function Field({
   );
 }
 
+const subscribeNothing = () => () => {};
+
+// O rascunho mora no localStorage, que só existe no navegador: o formulário
+// monta depois da hidratação, já com ele no estado inicial.
 export function PrintItemForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const parentParam = searchParams.get("derivadoDe");
   const recordParam = searchParams.get("registro");
   const copyParam = searchParams.get("duplicarDe");
+  const isClient = useSyncExternalStore(
+    subscribeNothing,
+    () => true,
+    () => false,
+  );
+  if (!isClient) return null;
+  const storageKey = draftKey(copyParam, parentParam, recordParam);
+  return (
+    <PrintItemFormContent
+      key={storageKey}
+      storageKey={storageKey}
+      parentParam={parentParam}
+      recordParam={recordParam}
+      copyParam={copyParam}
+    />
+  );
+}
 
-  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+function PrintItemFormContent({
+  storageKey,
+  parentParam,
+  recordParam,
+  copyParam,
+}: {
+  storageKey: string;
+  parentParam: string | null;
+  recordParam: string | null;
+  copyParam: string | null;
+}) {
+  const router = useRouter();
+  const [storedDraft] = useState(() => loadStoredDraft(storageKey));
+
+  const [draft, setDraft] = useState<Draft>(storedDraft ?? EMPTY_DRAFT);
   const [items, setItems] = useState<PrintItem[]>([]);
   const [filaments, setFilaments] = useState<PrintFilament[]>([]);
   const [extraItemOptions, setExtraItemOptions] = useState<PrintExtraItem[]>(
     [],
   );
   const [categories, setCategories] = useState<Category[]>([]);
-  const [showExtras, setShowExtras] = useState(false);
+  const [showExtras, setShowExtras] = useState(Boolean(storedDraft?.extras));
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
   const photosRef = useRef(photos);
   const [isDragging, setIsDragging] = useState(false);
@@ -390,6 +474,16 @@ export function PrintItemForm() {
   const { costs, loadError: costsError } = useCostContext();
   const printers = costs?.printers ?? [];
   const lastPrinter = useLastPrinter();
+
+  // Só grava depois que o usuário mexe em algo: abrir e sair não cria rascunho.
+  const isDirtyRef = useRef(storedDraft != null);
+  const [restored, setRestored] = useState(storedDraft != null);
+  // O ponto de partida sem rascunho, para "Descartar".
+  const baseDraftRef = useRef<Draft>(EMPTY_DRAFT);
+
+  useEffect(() => {
+    if (isDirtyRef.current) storeDraft(storageKey, draft);
+  }, [draft, storageKey]);
 
   useEffect(() => {
     listPrintFilaments()
@@ -416,17 +510,27 @@ export function PrintItemForm() {
       const record =
         source.records.find((r) => r.id === recordParam) ??
         getDefaultRecord(source);
-      setDraft(
-        copyParam
-          ? draftFromCopy(source, record)
-          : draftFromParent(source, record),
-      );
+      baseDraftRef.current = copyParam
+        ? draftFromCopy(source, record)
+        : draftFromParent(source, record);
+      // Rascunho salvo vale mais que o ponto de partida.
+      if (isDirtyRef.current) return;
+      setDraft(baseDraftRef.current);
       if (record.settings?.extras) setShowExtras(true);
     });
   }, [copyParam, parentParam, recordParam]);
 
   function set<K extends keyof Draft>(key: K, value: Draft[K]) {
+    isDirtyRef.current = true;
     setDraft((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function discardDraft() {
+    clearStoredDraft(storageKey);
+    isDirtyRef.current = false;
+    setRestored(false);
+    setDraft(baseDraftRef.current);
+    setShowExtras(Boolean(baseDraftRef.current.extras));
   }
 
   const units = Math.max(1, Math.round(parseDecimal(draft.units)) || 1);
@@ -525,6 +629,8 @@ export function PrintItemForm() {
         photos.map((photo) => photo.file),
       );
       lastPrinter.rememberPrinter(printer!.id);
+      isDirtyRef.current = false;
+      clearStoredDraft(storageKey);
       router.push(
         `/dashboard/impressoes/${created.id}${photoError ? "?fotos=erro" : ""}`,
       );
@@ -556,7 +662,12 @@ export function PrintItemForm() {
         type="button"
         variant="ghost"
         size="sm"
-        onClick={() => router.push("/dashboard/impressoes")}
+        onClick={() => {
+          // Cancelar é desistir de propósito: o rascunho vai junto.
+          isDirtyRef.current = false;
+          clearStoredDraft(storageKey);
+          router.push("/dashboard/impressoes");
+        }}
       >
         Cancelar
       </Button>
@@ -588,6 +699,23 @@ export function PrintItemForm() {
             A peça e a primeira vez que ela foi impressa. Das próximas vezes,
             use &ldquo;Novo registro&rdquo; dentro do item.
           </p>
+          {restored && (
+            <div className="mt-3 flex items-center gap-2 rounded-md border border-brand/40 bg-brand/10 px-3 py-2 text-[12.5px]">
+              <span>
+                Continuando de onde você parou. As fotos precisam ser
+                adicionadas de novo.
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="ml-auto text-muted-foreground"
+                onClick={discardDraft}
+              >
+                Descartar rascunho
+              </Button>
+            </div>
+          )}
         </div>
 
         <Step n={1} title="A peça">
