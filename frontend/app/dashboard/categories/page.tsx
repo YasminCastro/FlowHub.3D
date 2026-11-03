@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  ArrowDown,
+  ArrowUp,
   ArrowUpDown,
   EyeOff,
   Filter,
@@ -560,7 +562,39 @@ export default function CategoriesPage() {
         <Table>
           <TableHeader className="uppercase text-xs">
             <TableRow>
-              <TableHead className="text-muted-foreground">Categoria</TableHead>
+              <TableHead
+                className="text-muted-foreground"
+                aria-sort={
+                  sortOption === "name-asc"
+                    ? "ascending"
+                    : sortOption === "name-desc"
+                      ? "descending"
+                      : "none"
+                }
+              >
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSortOption((prev) =>
+                      prev === "name-asc" ? "name-desc" : "name-asc",
+                    )
+                  }
+                  className="inline-flex items-center gap-1 uppercase outline-none hover:text-foreground focus-visible:text-foreground"
+                  aria-label="Ordenar por nome da categoria"
+                >
+                  Categoria
+                  {sortOption === "name-asc" ? (
+                    <ArrowUp className="size-3.5" aria-hidden="true" />
+                  ) : sortOption === "name-desc" ? (
+                    <ArrowDown className="size-3.5" aria-hidden="true" />
+                  ) : (
+                    <ArrowUpDown
+                      className="size-3.5 opacity-50"
+                      aria-hidden="true"
+                    />
+                  )}
+                </button>
+              </TableHead>
               <TableHead className="text-muted-foreground">
                 Impressões
               </TableHead>
