@@ -62,10 +62,16 @@ import {
   SuffixInput,
   changedFieldClass,
 } from "@/components/prints/print-bits";
+import {
+  SlicerSettingsDraft,
+  SlicerSettingsFields,
+  slicerDraftFrom,
+  slicerDraftProblem,
+  toSlicerSettings,
+} from "@/components/prints/slicer-settings-fields";
 import { FramedPhoto } from "@/components/prints/framed-photo";
 import { useLastPrinter } from "@/hooks/use-last-printer";
 import {
-  DEFAULT_SLICER_SETTINGS,
   FAILURE_REASONS,
   PrintExtraItem,
   PrintFilament,
@@ -73,7 +79,8 @@ import {
   PrintOutcome,
   PrintRecord,
   PrintRecordInput,
-  SlicerSettings,
+  SLICER_SETTING_KEYS,
+  SlicerSettingKey,
   addPrintRecord,
   updatePrintRecord,
   CostContext,
@@ -81,7 +88,6 @@ import {
   computeCostPerUnit,
   describeChanges,
   describePrintFilament,
-  formatDecimal,
   formatDecimalInput,
   formatDuration,
   formatGrams,
@@ -111,13 +117,6 @@ function toIso(date: string) {
 function ordinal(n: number) {
   return `${n}º`;
 }
-
-type SettingsDraft = {
-  layerHeightMm: string;
-  infillPercent: string;
-  walls: string;
-  temperatureC: string;
-};
 
 // O formulário em si: montado a cada abertura (e a cada troca de base),
 // então o estado inicial sempre vem do registro de base.
@@ -195,18 +194,11 @@ function RecordForm({
   const [time, setTime] = useState(minutesToDuration(base.totalMinutes));
   const [gramsTouched, setGramsTouched] = useState(false);
   const [timeTouched, setTimeTouched] = useState(false);
-  // Configuração do fatiador é opcional: aberta se o registro de base tinha.
-  const [showSettings, setShowSettings] = useState(base.settings != null);
-  const startSettings = base.settings ?? DEFAULT_SLICER_SETTINGS;
-  const [settings, setSettings] = useState<SettingsDraft>({
-    layerHeightMm: formatDecimal(startSettings.layerHeightMm),
-    infillPercent: String(startSettings.infillPercent),
-    walls: String(startSettings.walls),
-    temperatureC:
-      startSettings.temperatureC != null
-        ? String(startSettings.temperatureC)
-        : "",
-  });
+  // Configuração do fatiador: começa com os ajustes do registro de base; o
+  // usuário marca só o que mexeu.
+  const [settings, setSettings] = useState<SlicerSettingsDraft>(() =>
+    slicerDraftFrom(base.settings),
+  );
   // Na edição, resultado, motivo, observação e fotos vêm do registro.
   const editedFailure = isEditing && base.outcome === "FAILURE";
   const knownReason =
@@ -270,25 +262,14 @@ function RecordForm({
     }
   }
 
-  const nextSettings: SlicerSettings | null = showSettings
-    ? {
-        ...startSettings,
-        layerHeightMm: parseDecimal(settings.layerHeightMm),
-        infillPercent: Math.round(parseDecimal(settings.infillPercent)),
-        walls: Math.round(parseDecimal(settings.walls)),
-        temperatureC: settings.temperatureC.trim()
-          ? Math.round(parseDecimal(settings.temperatureC))
-          : null,
-      }
-    : null;
+  const nextSettings = toSlicerSettings(settings);
 
-  // "Mudou" só faz sentido com configuração dos dois lados.
-  function settingDiffers(key: keyof SettingsDraft) {
-    return (
-      base.settings != null &&
-      nextSettings != null &&
-      nextSettings[key] !== base.settings[key]
-    );
+  function settingDiffers(key: SlicerSettingKey) {
+    const before = base.settings?.[key] ?? null;
+    const after = nextSettings?.[key] ?? null;
+    return key === "extras"
+      ? (before ?? "") !== (after ?? "")
+      : before !== after;
   }
 
   const changed = {
@@ -300,17 +281,8 @@ function RecordForm({
     extraItems:
       extraItemDrafts.map((u) => `${u.extraItemId}:${u.quantity}`).join() !==
       base.extraItems.map((u) => `${u.extraItem.id}:${u.quantity}`).join(),
-    layerHeightMm: settingDiffers("layerHeightMm"),
-    infillPercent: settingDiffers("infillPercent"),
-    walls: settingDiffers("walls"),
-    temperatureC: settingDiffers("temperatureC"),
   };
-  const settingsChanges = [
-    changed.layerHeightMm,
-    changed.infillPercent,
-    changed.walls,
-    changed.temperatureC,
-  ].filter(Boolean).length;
+  const settingsChanges = SLICER_SETTING_KEYS.filter(settingDiffers).length;
 
   const changeSummary = describeChanges(base, {
     printer,
@@ -349,10 +321,6 @@ function RecordForm({
   const failureReason =
     reason === OTHER_REASON ? otherReason.trim() : (reason ?? "");
 
-  function setSetting(key: keyof SettingsDraft, value: string) {
-    setSettings((prev) => ({ ...prev, [key]: value }));
-  }
-
   function addPhotos(files: FileList | null) {
     if (!files) return;
     const { accepted, error: photoError } = pickPhotos(
@@ -369,6 +337,8 @@ function RecordForm({
       return "O registro padrão precisa ter dado certo. Marque outro como padrão antes.";
     if (!selectedPrinter) return "Escolha a impressora.";
     if (!parsedUsages.length) return "Escolha ao menos um filamento.";
+    const settingsProblem = slicerDraftProblem(settings);
+    if (settingsProblem) return settingsProblem;
     if (extraItemDrafts.some((row) => !row.extraItemId))
       return "Escolha o item extra ou remova a linha.";
     if (parsedExtraItems.some((u) => u.quantity < 1))
@@ -601,69 +571,22 @@ function RecordForm({
         <div className="flex flex-col gap-2.5">
           <div className="flex items-center gap-2">
             <SectionLabel>Configuração do fatiador</SectionLabel>
-            {showSettings && (
-              <>
-                <span className="ml-auto text-[11.5px] text-muted-foreground">
-                  {!base.settings
-                    ? "nova"
-                    : settingsChanges === 0
-                      ? isEditing
-                        ? "sem alterações"
-                        : "igual ao registro de base"
-                      : `${settingsChanges} ${settingsChanges === 1 ? "alteração" : "alterações"}`}
-                </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="xs"
-                  className="text-muted-foreground"
-                  onClick={() => setShowSettings(false)}
-                >
-                  Remover
-                </Button>
-              </>
+            {(base.settings != null || nextSettings != null) && (
+              <span className="ml-auto text-[11.5px] text-muted-foreground">
+                {settingsChanges === 0
+                  ? isEditing
+                    ? "sem alterações"
+                    : "igual ao registro de base"
+                  : `${settingsChanges} ${settingsChanges === 1 ? "alteração" : "alterações"}`}
+              </span>
             )}
           </div>
-          {showSettings ? (
-            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-              {(
-                [
-                  ["layerHeightMm", "Camada", "mm"],
-                  ["infillPercent", "Preench.", "%"],
-                  ["walls", "Paredes", ""],
-                  ["temperatureC", "Temp.", "°C"],
-                ] as const
-              ).map(([key, label, suffix]) => (
-                <div key={key} className="flex flex-col gap-2">
-                  <Label
-                    htmlFor={`record-${key}`}
-                    className="whitespace-nowrap"
-                  >
-                    {label}
-                    {changed[key] && <ChangedMark />}
-                  </Label>
-                  <SuffixInput
-                    id={`record-${key}`}
-                    suffix={suffix}
-                    value={settings[key]}
-                    onChange={(e) => setSetting(key, e.target.value)}
-                    className={changedFieldClass(changed[key])}
-                  />
-                </div>
-              ))}
-            </div>
-          ) : (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="self-start text-brand-300"
-              onClick={() => setShowSettings(true)}
-            >
-              <Plus />
-              Adicionar configuração do fatiador
-            </Button>
-          )}
+          <SlicerSettingsFields
+            idPrefix="record"
+            value={settings}
+            onChange={setSettings}
+            changed={(key) => base.settings != null && settingDiffers(key)}
+          />
         </div>
 
         <div className="flex flex-col gap-2.5">
@@ -864,7 +787,7 @@ function RecordForm({
             {!isEditing && (
               <div className="flex items-center gap-1.75 text-xs text-muted-foreground">
                 <GitBranch className="size-3.25" aria-hidden="true" />
-                Mudou a peça em si (escala, modelo)?
+                Mudou a peça em si (outro modelo)?
                 <Link
                   href={`/dashboard/impressoes/new?derivadoDe=${item.id}`}
                   className="text-brand-300 hover:underline"

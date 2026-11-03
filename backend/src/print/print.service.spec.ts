@@ -76,6 +76,7 @@ describe('PrintService', () => {
       printerId,
       printerName: 'Bambu A1',
       slicer: 'Orca',
+      scalePercent: null,
       layerHeightMm: 0.2,
       infillPercent: 15,
       infillPattern: 'giroide',
@@ -399,6 +400,7 @@ describe('PrintService', () => {
         itemRow([
           recordRow({
             slicer: null,
+            scalePercent: null,
             layerHeightMm: null,
             infillPercent: null,
             infillPattern: null,
@@ -415,6 +417,7 @@ describe('PrintService', () => {
 
       expect(dataOf(prisma.printRecord.create)).toMatchObject({
         slicer: null,
+        scalePercent: null,
         layerHeightMm: null,
         infillPercent: null,
         infillPattern: null,
@@ -423,6 +426,48 @@ describe('PrintService', () => {
         extras: '',
       });
       expect(result.data.records[0].settings).toBeNull();
+    });
+
+    it('grava só os ajustes marcados na configuração do fatiador', async () => {
+      prisma.printItem.findFirst.mockResolvedValue(
+        itemRow([
+          recordRow({
+            slicer: null,
+            scalePercent: 10,
+            layerHeightMm: null,
+            infillPercent: null,
+            infillPattern: null,
+            walls: null,
+            temperatureC: null,
+          }),
+        ]),
+      );
+
+      const result = await service.addRecord(itemId, userId, {
+        ...record,
+        settings: { scalePercent: 10 },
+      });
+
+      expect(dataOf(prisma.printRecord.create)).toMatchObject({
+        slicer: null,
+        scalePercent: 10,
+        layerHeightMm: null,
+        infillPercent: null,
+        infillPattern: null,
+        walls: null,
+        temperatureC: null,
+        extras: '',
+      });
+      expect(result.data.records[0].settings).toEqual({
+        slicer: null,
+        scalePercent: 10,
+        layerHeightMm: null,
+        infillPercent: null,
+        infillPattern: null,
+        walls: null,
+        temperatureC: null,
+        extras: '',
+      });
     });
 
     it('aceita falha que parou antes de gastar filamento', async () => {

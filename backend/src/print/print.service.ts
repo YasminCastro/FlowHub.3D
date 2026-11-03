@@ -351,28 +351,18 @@ export class PrintService {
           existingExtraItems,
         )
       : undefined;
-    const settings = data.settings
-      ? {
-          slicer: this.requireText(data.settings.slicer, 'Informe o fatiador.'),
-          layerHeightMm: data.settings.layerHeightMm,
-          infillPercent: data.settings.infillPercent,
-          infillPattern: this.requireText(
-            data.settings.infillPattern,
-            'Informe o padrão de preenchimento.',
-          ),
-          walls: data.settings.walls,
-          temperatureC: data.settings.temperatureC ?? null,
-          extras: data.settings.extras?.trim() ?? '',
-        }
-      : {
-          slicer: null,
-          layerHeightMm: null,
-          infillPercent: null,
-          infillPattern: null,
-          walls: null,
-          temperatureC: null,
-          extras: '',
-        };
+    // Só vai o que o usuário marcou; o resto fica null.
+    const input = data.settings;
+    const settings = {
+      slicer: this.normalizeOptional(input?.slicer),
+      scalePercent: input?.scalePercent ?? null,
+      layerHeightMm: input?.layerHeightMm ?? null,
+      infillPercent: input?.infillPercent ?? null,
+      infillPattern: this.normalizeOptional(input?.infillPattern),
+      walls: input?.walls ?? null,
+      temperatureC: input?.temperatureC ?? null,
+      extras: input?.extras?.trim() ?? '',
+    };
 
     return {
       printedAt: data.printedAt,
@@ -410,6 +400,7 @@ export class PrintService {
     printerId,
     printerName,
     slicer,
+    scalePercent,
     layerHeightMm,
     infillPercent,
     infillPattern,
@@ -432,12 +423,20 @@ export class PrintService {
       changeSummary: record.changeSummary,
       createdAt: record.createdAt,
       printer: { id: printerId, name: printerName },
-      // Sem fatiador, o registro não tem configuração.
+      // Sem nenhum ajuste marcado, o registro não tem configuração.
       settings:
-        slicer == null
+        slicer == null &&
+        scalePercent == null &&
+        layerHeightMm == null &&
+        infillPercent == null &&
+        infillPattern == null &&
+        walls == null &&
+        temperatureC == null &&
+        !extras
           ? null
           : {
               slicer,
+              scalePercent,
               layerHeightMm,
               infillPercent,
               infillPattern,

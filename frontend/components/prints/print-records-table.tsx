@@ -134,9 +134,13 @@ function RecordDetails({
         <SectionLabel>Configuração</SectionLabel>
         <p className="text-[12.5px] leading-relaxed text-foreground/72">
           {record.printer.name}
-          {s ? ` · ${s.slicer}` : ""}
-          <br />
-          {s ? formatSettings(s) : "Sem configuração do fatiador"}
+          {s?.slicer ? ` · ${s.slicer}` : ""}
+          {(!s || formatSettings(s)) && (
+            <>
+              <br />
+              {s ? formatSettings(s) : "Sem configuração do fatiador"}
+            </>
+          )}
           {s?.extras && (
             <>
               <br />

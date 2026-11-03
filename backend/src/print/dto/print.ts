@@ -74,31 +74,42 @@ export class PrintExtraItemUsageDto {
   quantity!: number;
 }
 
+// Cada campo é opcional: o registro guarda só os ajustes que o usuário marcou.
 export class SlicerSettingsDto {
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(PRINT_SHORT_TEXT_MAX_LENGTH)
-  slicer!: string;
+  slicer?: string | null;
 
+  // Escala do modelo, em % (100 = tamanho original).
+  @IsOptional()
+  @IsNumber()
+  @Min(0.1)
+  @Max(10000)
+  scalePercent?: number | null;
+
+  @IsOptional()
   @IsNumber()
   @Min(0.01)
   @Max(5)
-  layerHeightMm!: number;
+  layerHeightMm?: number | null;
 
+  @IsOptional()
   @IsInt()
   @Min(0)
   @Max(100)
-  infillPercent!: number;
+  infillPercent?: number | null;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(PRINT_SHORT_TEXT_MAX_LENGTH)
-  infillPattern!: string;
+  infillPattern?: string | null;
 
+  @IsOptional()
   @IsInt()
   @Min(0)
   @Max(100)
-  walls!: number;
+  walls?: number | null;
 
   @IsOptional()
   @IsInt()

@@ -397,8 +397,11 @@ model PrintRecord {
   printerId     String?
   printer       Printer?     @relation(fields: [printerId], references: [id], onDelete: SetNull)
   printerName   String
-  // Configuração do fatiador: opcional, tudo null quando não informada.
+  // Configuração do fatiador: cada campo é opcional (só vai o que o
+  // usuário marcou); tudo null quando não informada.
   slicer        String?
+  // Escala do modelo no fatiador, em % (100 = tamanho original).
+  scalePercent  Float?
   layerHeightMm Float?
   infillPercent Int?
   infillPattern String?

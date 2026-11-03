@@ -30,7 +30,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Textarea } from "@/components/ui/textarea";
 import { FilamentDot } from "@/components/journal/journal-status-badge";
 import { PendingPhoto, pickPhotos } from "@/components/prints/pending-photos";
 import {
@@ -56,8 +55,14 @@ import {
   OptionalHint,
   SectionLabel,
   StatDivider,
-  SuffixInput,
 } from "@/components/prints/print-bits";
+import {
+  SlicerSettingsDraft,
+  SlicerSettingsFields,
+  slicerDraftFrom,
+  slicerDraftProblem,
+  toSlicerSettings,
+} from "@/components/prints/slicer-settings-fields";
 import {
   usePageHeaderAction,
   usePageHeaderBreadcrumb,
@@ -66,21 +71,16 @@ import { useCostContext } from "@/hooks/use-cost-context";
 import { useLastPrinter } from "@/hooks/use-last-printer";
 import { Category, listCategories } from "@/lib/api/category";
 import {
-  INFILL_PATTERNS,
   PrintExtraItem,
   PrintFilament,
   PrintItem,
   PrintRecord,
-  SLICERS,
-  DEFAULT_SLICER_SETTINGS,
-  SlicerSettings,
   computeCostPerUnit,
   costRows,
   createPrintItem,
   describeExtraItemUsage,
   describePrintFilament,
   findCostPrinter,
-  formatDecimal,
   formatDuration,
   formatGrams,
   getDefaultRecord,
@@ -260,14 +260,8 @@ type Draft = {
   usages: FilamentUsageDraft[];
   // Ímãs, argolas...: opcional, com a quantidade por peça.
   extraItems: ExtraItemUsageDraft[];
-  // A configuração do fatiador é opcional: só vai se o usuário abrir.
-  hasSettings: boolean;
-  slicer: string;
-  layerHeightMm: string;
-  infillPercent: string;
-  infillPattern: string;
-  walls: string;
-  extras: string;
+  // Configuração do fatiador: só os ajustes que o usuário marcou.
+  settings: SlicerSettingsDraft;
   note: string;
 };
 
@@ -283,22 +277,9 @@ const EMPTY_DRAFT: Draft = {
   units: "1",
   usages: [EMPTY_USAGE],
   extraItems: [],
-  ...settingsDraft(null),
+  settings: {},
   note: "",
 };
-
-function settingsDraft(settings: SlicerSettings | null) {
-  const s = settings ?? DEFAULT_SLICER_SETTINGS;
-  return {
-    hasSettings: settings != null,
-    slicer: s.slicer,
-    layerHeightMm: formatDecimal(s.layerHeightMm),
-    infillPercent: String(s.infillPercent),
-    infillPattern: s.infillPattern,
-    walls: String(s.walls),
-    extras: s.extras,
-  };
-}
 
 // Derivado: começa com a categoria e a impressão do item de origem; a
 // impressora fica a última usada.
@@ -311,7 +292,7 @@ function draftFromParent(parent: PrintItem, record: PrintRecord): Draft {
     units: String(record.units),
     usages: record.filaments.map((u) => usageDraftFrom(u.filament, u.grams)),
     extraItems: record.extraItems.map((u) => extraItemDraftFrom(u)),
-    ...settingsDraft(record.settings),
+    settings: slicerDraftFrom(record.settings),
   };
 }
 
@@ -349,7 +330,14 @@ function draftKey(
 function loadStoredDraft(key: string): Draft | null {
   try {
     const raw = localStorage.getItem(key);
-    return raw ? { ...EMPTY_DRAFT, ...(JSON.parse(raw) as Partial<Draft>) } : null;
+    if (!raw) return null;
+    const stored = JSON.parse(raw) as Partial<Draft>;
+    // Rascunho do formato antigo (campos soltos): a configuração recomeça.
+    const settings =
+      stored.settings && typeof stored.settings === "object"
+        ? stored.settings
+        : {};
+    return { ...EMPTY_DRAFT, ...stored, settings };
   } catch {
     return null;
   }
@@ -464,7 +452,6 @@ function PrintItemFormContent({
     [],
   );
   const [categories, setCategories] = useState<Category[]>([]);
-  const [showExtras, setShowExtras] = useState(Boolean(storedDraft?.extras));
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
   const photosRef = useRef(photos);
   const [isDragging, setIsDragging] = useState(false);
@@ -516,7 +503,6 @@ function PrintItemFormContent({
       // Rascunho salvo vale mais que o ponto de partida.
       if (isDirtyRef.current) return;
       setDraft(baseDraftRef.current);
-      if (record.settings?.extras) setShowExtras(true);
     });
   }, [copyParam, parentParam, recordParam]);
 
@@ -530,7 +516,6 @@ function PrintItemFormContent({
     isDirtyRef.current = false;
     setRestored(false);
     setDraft(baseDraftRef.current);
-    setShowExtras(Boolean(baseDraftRef.current.extras));
   }
 
   const units = Math.max(1, Math.round(parseDecimal(draft.units)) || 1);
@@ -587,7 +572,7 @@ function PrintItemFormContent({
       return "Escolha o item extra ou remova a linha.";
     if (extraItems.some((u) => u.quantity < 1))
       return "Informe quantos de cada item extra vão por peça.";
-    return null;
+    return slicerDraftProblem(draft.settings);
   }
 
   async function save() {
@@ -609,17 +594,7 @@ function PrintItemFormContent({
             extraItems,
             units,
             totalMinutes: minutes,
-            settings: draft.hasSettings
-              ? {
-                  slicer: draft.slicer,
-                  layerHeightMm: parseDecimal(draft.layerHeightMm),
-                  infillPercent: Math.round(parseDecimal(draft.infillPercent)),
-                  infillPattern: draft.infillPattern,
-                  walls: Math.round(parseDecimal(draft.walls)),
-                  temperatureC: null,
-                  extras: draft.extras.trim(),
-                }
-              : null,
+            settings: toSlicerSettings(draft.settings),
             outcome: "SUCCESS",
             failureReason: null,
             note: draft.note.trim() || null,
@@ -931,130 +906,12 @@ function PrintItemFormContent({
 
         <Separator />
 
-        <Step
-          n={3}
-          title="Configuração do fatiador"
-          hint="opcional"
-          action={
-            draft.hasSettings && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground"
-                onClick={() => set("hasSettings", false)}
-              >
-                <X />
-                Remover
-              </Button>
-            )
-          }
-        >
-          {draft.hasSettings ? (
-            <>
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                <Field label="Fatiador">
-                  <Select
-                    value={draft.slicer}
-                    onValueChange={(value) => value && set("slicer", value)}
-                  >
-                    <SelectTrigger aria-label="Fatiador" className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {SLICERS.map((s) => (
-                        <SelectItem key={s} value={s}>
-                          {s}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field label="Camada" htmlFor="print-layer">
-                  <SuffixInput
-                    id="print-layer"
-                    suffix="mm"
-                    value={draft.layerHeightMm}
-                    onChange={(e) => set("layerHeightMm", e.target.value)}
-                  />
-                </Field>
-                <Field label="Preenchimento" htmlFor="print-infill">
-                  <div className="grid grid-cols-[64px_minmax(0,1fr)] gap-1.5">
-                    <SuffixInput
-                      id="print-infill"
-                      suffix="%"
-                      className="pr-6"
-                      value={draft.infillPercent}
-                      onChange={(e) => set("infillPercent", e.target.value)}
-                    />
-                    <Select
-                      value={draft.infillPattern}
-                      onValueChange={(value) =>
-                        value && set("infillPattern", value)
-                      }
-                    >
-                      <SelectTrigger
-                        aria-label="Padrão de preenchimento"
-                        className="w-full"
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {INFILL_PATTERNS.map((p) => (
-                          <SelectItem key={p} value={p}>
-                            {p}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </Field>
-                <Field label="Paredes" htmlFor="print-walls">
-                  <Input
-                    id="print-walls"
-                    inputMode="numeric"
-                    value={draft.walls}
-                    onChange={(e) => set("walls", e.target.value)}
-                    className="tabular-nums"
-                  />
-                </Field>
-              </div>
-              {showExtras ? (
-                <Field label="Outros ajustes" htmlFor="print-extras">
-                  <Textarea
-                    id="print-extras"
-                    className="min-h-16"
-                    placeholder="Ex.: suporte em árvore, brim 5 mm, velocidade 80%"
-                    maxLength={500}
-                    value={draft.extras}
-                    onChange={(e) => set("extras", e.target.value)}
-                  />
-                </Field>
-              ) : (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="self-start text-brand-300"
-                  onClick={() => setShowExtras(true)}
-                >
-                  <Plus />
-                  Suporte, brim, velocidade, outros
-                </Button>
-              )}
-            </>
-          ) : (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="self-start text-brand-300"
-              onClick={() => set("hasSettings", true)}
-            >
-              <Plus />
-              Adicionar configuração do fatiador
-            </Button>
-          )}
+        <Step n={3} title="Configuração do fatiador" hint="opcional">
+          <SlicerSettingsFields
+            idPrefix="print"
+            value={draft.settings}
+            onChange={(next) => set("settings", next)}
+          />
         </Step>
 
         <Separator />

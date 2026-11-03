@@ -71,17 +71,22 @@ export type PhotoFraming = { focusX: number; focusY: number; contain: boolean };
 
 export type PrintPhoto = { id: string; src: string } & PhotoFraming;
 
+// Cada campo é opcional: o registro guarda só os ajustes que o usuário
+// marcou (null = não informado).
 export type SlicerSettings = {
-  slicer: string;
-  layerHeightMm: number;
-  infillPercent: number;
-  infillPattern: string;
-  walls: number;
-  // Opcional: a Nova impressão não pede.
+  slicer: string | null;
+  // Escala do modelo, em % (100 = tamanho original).
+  scalePercent: number | null;
+  layerHeightMm: number | null;
+  infillPercent: number | null;
+  infillPattern: string | null;
+  walls: number | null;
   temperatureC: number | null;
-  // Suporte, brim, velocidade e o resto, em texto livre.
+  // Suporte, brim, velocidade e o resto, em texto livre ("" = não informado).
   extras: string;
 };
+
+export type SlicerSettingKey = keyof SlicerSettings;
 
 export type PrintRecord = {
   id: string;
@@ -152,16 +157,49 @@ export const SLICERS = [
   "Anycubic Slicer Next",
 ];
 
-// Ponto de partida quando o usuário abre a configuração do fatiador.
-export const DEFAULT_SLICER_SETTINGS: SlicerSettings = {
-  slicer: "Orca",
-  layerHeightMm: 0.2,
-  infillPercent: 15,
-  infillPattern: "giroide",
-  walls: 2,
+export const EMPTY_SLICER_SETTINGS: SlicerSettings = {
+  slicer: null,
+  scalePercent: null,
+  layerHeightMm: null,
+  infillPercent: null,
+  infillPattern: null,
+  walls: null,
   temperatureC: null,
   extras: "",
 };
+
+// Os ajustes que dá para marcar, na ordem em que aparecem.
+export const SLICER_SETTING_KEYS: SlicerSettingKey[] = [
+  "slicer",
+  "scalePercent",
+  "layerHeightMm",
+  "infillPercent",
+  "infillPattern",
+  "walls",
+  "temperatureC",
+  "extras",
+];
+
+export const SLICER_SETTING_LABELS: Record<SlicerSettingKey, string> = {
+  slicer: "Fatiador",
+  scalePercent: "Escala",
+  layerHeightMm: "Camada",
+  infillPercent: "Preenchimento",
+  infillPattern: "Padrão de preench.",
+  walls: "Paredes",
+  temperatureC: "Temperatura",
+  extras: "Outros ajustes",
+};
+
+export function hasSlicerSetting(
+  settings: SlicerSettings | null | undefined,
+  key: SlicerSettingKey,
+) {
+  const value = settings?.[key];
+  return key === "extras"
+    ? !!(value as string | undefined)?.trim()
+    : value != null;
+}
 
 export const INFILL_PATTERNS = ["giroide", "grade", "cúbico", "linhas"];
 
@@ -843,33 +881,30 @@ export function describeChanges(
   if (base.units !== next.units) parts.push(`${next.units} un.`);
   const a = base.settings;
   const b = next.settings;
-  if (!a || !b) {
-    if (a) parts.push("sem config. do fatiador");
-    if (b) parts.push("com config. do fatiador");
-    return parts.length ? parts.join(" · ") : "mesma config.";
-  }
-  if (a.slicer !== b.slicer) parts.push(b.slicer);
-  if (a.layerHeightMm !== b.layerHeightMm) {
-    parts.push(
-      `Camada ${formatDecimal(a.layerHeightMm)} → ${formatDecimal(b.layerHeightMm)} mm`,
-    );
-  }
-  if (a.infillPercent !== b.infillPercent) {
-    parts.push(`Infill ${a.infillPercent}% → ${b.infillPercent}%`);
-  }
-  if (a.infillPattern !== b.infillPattern) parts.push(b.infillPattern);
-  if (a.walls !== b.walls) parts.push(`Paredes ${a.walls} → ${b.walls}`);
-  if (a.temperatureC !== b.temperatureC) {
-    parts.push(
-      b.temperatureC == null
-        ? "sem temperatura"
-        : a.temperatureC == null
-          ? `${b.temperatureC} °C`
-          : `${a.temperatureC} → ${b.temperatureC} °C`,
-    );
-  }
-  if (a.extras.trim() !== b.extras.trim() && b.extras.trim()) {
-    parts.push(b.extras.trim());
+  for (const key of SLICER_SETTING_KEYS) {
+    const had = hasSlicerSetting(a, key);
+    const has = hasSlicerSetting(b, key);
+    if (!had && !has) continue;
+    if (key === "extras") {
+      if (has && a?.extras.trim() !== b!.extras.trim()) {
+        parts.push(b!.extras.trim());
+      }
+      continue;
+    }
+    if (had && has && a![key] === b![key]) continue;
+    const label = SLICER_SETTING_LABELS[key];
+    if (!has) {
+      parts.push(`sem ${label.toLowerCase()}`);
+    } else if (key === "slicer" || key === "infillPattern") {
+      parts.push(String(b![key]));
+    } else {
+      const to = formatSlicerSetting(key, b![key]);
+      parts.push(
+        had
+          ? `${label} ${formatSlicerSetting(key, a![key])} → ${to}`
+          : `${label} ${to}`,
+      );
+    }
   }
   return parts.length ? parts.join(" · ") : "mesma config.";
 }
@@ -911,11 +946,43 @@ export function formatDuration(minutes: number) {
   return `${h} h ${String(m).padStart(2, "0")}`;
 }
 
+// Valor de um ajuste com a unidade: 10 → "10%", 0.2 → "0,2 mm".
+export function formatSlicerSetting(
+  key: SlicerSettingKey,
+  value: SlicerSettings[SlicerSettingKey],
+) {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  switch (key) {
+    case "scalePercent":
+    case "infillPercent":
+      return `${formatDecimal(value)}%`;
+    case "layerHeightMm":
+      return `${formatDecimal(value)} mm`;
+    case "temperatureC":
+      return `${value} °C`;
+    default:
+      return formatDecimal(value);
+  }
+}
+
+// Resumo da configuração, sem o fatiador e os "Outros ajustes" (que
+// aparecem à parte).
 export function formatSettings(s: SlicerSettings) {
   return [
-    `${formatDecimal(s.layerHeightMm)} mm`,
-    `${s.infillPercent}% ${s.infillPattern}`,
-    `${s.walls} ${s.walls === 1 ? "parede" : "paredes"}`,
+    s.scalePercent != null ? `escala ${formatDecimal(s.scalePercent)}%` : null,
+    s.layerHeightMm != null ? `${formatDecimal(s.layerHeightMm)} mm` : null,
+    s.infillPercent != null || s.infillPattern
+      ? [
+          s.infillPercent != null ? `${s.infillPercent}%` : null,
+          s.infillPattern,
+        ]
+          .filter(Boolean)
+          .join(" ")
+      : null,
+    s.walls != null
+      ? `${s.walls} ${s.walls === 1 ? "parede" : "paredes"}`
+      : null,
     s.temperatureC != null ? `${s.temperatureC} °C` : null,
   ]
     .filter(Boolean)
