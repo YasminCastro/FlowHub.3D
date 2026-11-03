@@ -1,1 +1,6 @@
 .env
+
+.env.production
+*.crt
+uploads.zip
+backend/package-lock.json

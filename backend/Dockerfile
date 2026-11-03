@@ -29,5 +29,5 @@ RUN mkdir -p /app/uploads && chown node:node /app/uploads
 ENV UPLOADS_DIR=/app/uploads
 
 USER node
-EXPOSE 3001
+EXPOSE 3008
 CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy && node dist/src/main.js"]
