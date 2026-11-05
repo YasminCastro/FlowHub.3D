@@ -16,9 +16,13 @@ async function bootstrap() {
   app.use(cookieParser());
   // Fotos enviadas pelos usuários. Nomes aleatórios (UUID) e só extensões de
   // imagem; o nosniff impede o navegador de tratar o arquivo como outra coisa.
+  // Um arquivo nunca é sobrescrito (foto nova = nome novo), então o navegador
+  // pode guardar cada URL para sempre sem perguntar de novo ao servidor.
   app.useStaticAssets(UPLOADS_ROOT, {
     prefix: '/uploads/',
     index: false,
+    maxAge: '1y',
+    immutable: true,
     setHeaders: (res: Response) =>
       res.setHeader('X-Content-Type-Options', 'nosniff'),
   });
