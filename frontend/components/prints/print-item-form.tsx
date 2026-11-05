@@ -646,6 +646,16 @@ function PrintItemFormContent({
       >
         Cancelar
       </Button>
+      {restored && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={discardDraft}
+        >
+          Descartar rascunho
+        </Button>
+      )}
       <Button
         type="button"
         size="sm"
@@ -675,20 +685,9 @@ function PrintItemFormContent({
             use &ldquo;Novo registro&rdquo; dentro do item.
           </p>
           {restored && (
-            <div className="mt-3 flex items-center gap-2 rounded-md border border-brand/40 bg-brand/10 px-3 py-2 text-[12.5px]">
-              <span>
-                Continuando de onde você parou. As fotos precisam ser
-                adicionadas de novo.
-              </span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="ml-auto text-muted-foreground"
-                onClick={discardDraft}
-              >
-                Descartar rascunho
-              </Button>
+            <div className="mt-3 rounded-md border border-brand/40 bg-brand/10 px-3 py-2 text-[12.5px]">
+              Continuando de onde você parou. As fotos precisam ser adicionadas
+              de novo.
             </div>
           )}
         </div>
