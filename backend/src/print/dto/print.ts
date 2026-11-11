@@ -236,6 +236,23 @@ export class PrintItemDto {
   firstRecord!: PrintRecordDto;
 }
 
+// Edição dos dados da peça (os registros têm a própria edição).
+export class UpdatePrintItemDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(PRINT_NAME_MAX_LENGTH)
+  name!: string;
+
+  @IsOptional()
+  @IsUUID()
+  categoryId?: string | null;
+
+  @IsOptional()
+  @IsUrl()
+  @MaxLength(PRINT_URL_MAX_LENGTH)
+  modelUrl?: string | null;
+}
+
 export const PRINT_PAGE_SORTS = [
   'recent',
   'oldest',

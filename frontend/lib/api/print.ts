@@ -463,6 +463,17 @@ export async function createPrintItem(input: PrintItemInput, photos: File[]) {
   return withPhotos(item, item.defaultRecordId, photos);
 }
 
+export async function updatePrintItem(
+  id: string,
+  input: { name: string; categoryId: string | null; modelUrl: string | null },
+) {
+  const data = (await apiFetch(`/print/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  })) as ItemResponse;
+  return fromItemResponse(data.data);
+}
+
 export async function addPrintRecord(
   itemId: string,
   input: PrintRecordInput,

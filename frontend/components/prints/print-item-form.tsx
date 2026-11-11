@@ -94,7 +94,7 @@ import { cn, formatBRL } from "@/lib/utils";
 const NO_PARENT = "none";
 
 // Select de categoria com busca: digita para filtrar a lista.
-function CategoryCombobox({
+export function CategoryCombobox({
   categories,
   value,
   onChange,

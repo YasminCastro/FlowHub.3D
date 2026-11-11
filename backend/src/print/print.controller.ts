@@ -23,6 +23,7 @@ import {
   PrintItemDto,
   PrintItemsPageQueryDto,
   PrintSummaryQueryDto,
+  UpdatePrintItemDto,
   UpdatePrintPhotoDto,
   UpdatePrintRecordDto,
 } from './dto/print.js';
@@ -75,6 +76,15 @@ export class PrintController {
     @Param('id') itemId: string,
   ) {
     return this.printService.getItemById(itemId, currentUserId);
+  }
+
+  @Patch(':id')
+  update(
+    @CurrentUser('userId') currentUserId: string,
+    @Param('id') itemId: string,
+    @Body() dto: UpdatePrintItemDto,
+  ) {
+    return this.printService.updateItem(itemId, currentUserId, dto);
   }
 
   @Delete(':id')

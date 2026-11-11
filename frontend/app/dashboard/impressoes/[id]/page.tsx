@@ -9,6 +9,7 @@ import {
   ImageIcon,
   LinkIcon,
   ListOrdered,
+  Pencil,
   Store,
   Plus,
   Star,
@@ -26,6 +27,7 @@ import {
   StatDivider,
 } from "@/components/prints/print-bits";
 import { FramedPhoto, PhotoFramer } from "@/components/prints/framed-photo";
+import { PrintEditDialog } from "@/components/prints/print-edit-dialog";
 import { PrintDeleteDialog } from "@/components/prints/print-delete-dialog";
 import { PrintRecordDeleteDialog } from "@/components/prints/print-record-delete-dialog";
 import { PrintRecordSheet } from "@/components/prints/print-record-sheet";
@@ -132,6 +134,7 @@ export default function PrintItemPage() {
       : null,
   );
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [recordToDelete, setRecordToDelete] = useState<PrintRecord | null>(
     null,
   );
@@ -239,6 +242,14 @@ export default function PrintItemPage() {
         <Button size="sm" onClick={() => openSheet(null)}>
           <Plus />
           Novo registro
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setIsEditDialogOpen(true)}
+        >
+          <Pencil />
+          Editar
         </Button>
         <Button
           variant="destructive"
@@ -566,6 +577,13 @@ export default function PrintItemPage() {
           </Button>
         )}
       </section>
+
+      <PrintEditDialog
+        item={item}
+        open={isEditDialogOpen}
+        onOpenChange={setIsEditDialogOpen}
+        onSaved={setItem}
+      />
 
       <PrintDeleteDialog
         item={item}

@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import {
   AddPrintRecordDto,
   PRINT_MAX_PHOTOS,
+  UpdatePrintItemDto,
   UpdatePrintPhotoDto,
   UpdatePrintRecordDto,
   PrintExtraItemUsageDto,
@@ -643,6 +644,31 @@ export class PrintService {
 
   async getItemById(itemId: string, userId: string) {
     return this.toResponse(await this.findOwnedItem(itemId, userId));
+  }
+
+  async updateItem(itemId: string, userId: string, data: UpdatePrintItemDto) {
+    await this.findOwnedItem(itemId, userId);
+    if (data.categoryId) {
+      await this.ensureOwnedCategory(userId, data.categoryId);
+    }
+
+    const item = await this.withUniqueNameConflict(() =>
+      this.prisma.printItem.update({
+        where: { id: itemId },
+        data: {
+          name: this.requireText(data.name, 'Dê um nome para a peça.'),
+          modelUrl: this.normalizeOptional(data.modelUrl),
+          categoryId: data.categoryId ?? null,
+        },
+        omit: { userId: true },
+        include: itemInclude,
+      }),
+    );
+
+    return {
+      message: 'Impressão atualizada com sucesso',
+      data: this.toResponse(item),
+    };
   }
 
   async deleteItem(itemId: string, userId: string) {
