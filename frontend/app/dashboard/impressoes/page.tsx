@@ -8,6 +8,7 @@ import {
   ImagesIcon,
   Plus,
   Search,
+  Tag,
   TriangleAlert,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -53,32 +54,6 @@ const ALL_CATEGORIES = "all";
 const PAGE_SIZE = 24;
 // Espera parar de digitar antes de buscar no servidor.
 const SEARCH_DELAY_MS = 300;
-
-function FilterChip({
-  selected,
-  onClick,
-  children,
-}: {
-  selected: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={selected}
-      onClick={onClick}
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-md border px-3 py-1 text-xs whitespace-nowrap transition-colors",
-        selected
-          ? "border-brand bg-brand/10 text-brand"
-          : "border-border text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
 
 // Primeira, última e as vizinhas da atual; o resto vira "…".
 function pageNumbers(page: number, totalPages: number) {
@@ -381,7 +356,7 @@ export default function PrintsPage() {
           <h1 className="text-4xl font-bold">Impressões</h1>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
             <Search
               className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
@@ -395,6 +370,67 @@ export default function PrintsPage() {
               className="w-60 pl-8"
             />
           </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="outline"
+                  className={cn(
+                    categoryFilter !== ALL_CATEGORIES &&
+                      "border-brand bg-brand/10 text-brand",
+                  )}
+                >
+                  <Tag />
+                  {categoryFilter === ALL_CATEGORIES
+                    ? "Todas as categorias"
+                    : categories.find((c) => c.id === categoryFilter)?.name}
+                </Button>
+              }
+            />
+            <DropdownMenuContent
+              align="end"
+              className="max-h-72 w-56 overflow-y-auto"
+            >
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Categoria</DropdownMenuLabel>
+                <DropdownMenuRadioGroup
+                  value={categoryFilter}
+                  onValueChange={(value) =>
+                    changeFilter(() => setCategoryFilter(value))
+                  }
+                >
+                  <DropdownMenuRadioItem
+                    value={ALL_CATEGORIES}
+                    className="data-checked:bg-brand/12 data-checked:text-brand"
+                  >
+                    Todas
+                  </DropdownMenuRadioItem>
+                  {categories.map((category) => (
+                    <DropdownMenuRadioItem
+                      key={category.id}
+                      value={category.id}
+                      className="data-checked:bg-brand/12 data-checked:text-brand"
+                    >
+                      {category.name}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            variant="outline"
+            aria-pressed={onlyRecentFailure}
+            onClick={() =>
+              changeFilter(() => setOnlyRecentFailure((prev) => !prev))
+            }
+            className={cn(
+              onlyRecentFailure && "border-brand bg-brand/10 text-brand",
+            )}
+          >
+            <TriangleAlert />
+            Com falha recente
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
@@ -441,40 +477,6 @@ export default function PrintsPage() {
             />
           </div>
         ))}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-1.75">
-        <FilterChip
-          selected={categoryFilter === ALL_CATEGORIES}
-          onClick={() => changeFilter(() => setCategoryFilter(ALL_CATEGORIES))}
-        >
-          Todas
-        </FilterChip>
-        {categories.map((category) => (
-          <FilterChip
-            key={category.id}
-            selected={categoryFilter === category.id}
-            onClick={() =>
-              changeFilter(() =>
-                setCategoryFilter((prev) =>
-                  prev === category.id ? ALL_CATEGORIES : category.id,
-                ),
-              )
-            }
-          >
-            {category.name}
-          </FilterChip>
-        ))}
-        <span className="mx-1 h-4.5 w-px bg-border" aria-hidden="true" />
-        <FilterChip
-          selected={onlyRecentFailure}
-          onClick={() =>
-            changeFilter(() => setOnlyRecentFailure((prev) => !prev))
-          }
-        >
-          <TriangleAlert className="size-3.25" aria-hidden="true" />
-          Com falha recente
-        </FilterChip>
       </div>
 
       {renderContent()}
