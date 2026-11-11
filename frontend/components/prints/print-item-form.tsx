@@ -333,10 +333,18 @@ function loadStoredDraft(key: string): Draft | null {
     if (!raw) return null;
     const stored = JSON.parse(raw) as Partial<Draft>;
     // Rascunho do formato antigo (campos soltos): a configuração recomeça.
-    const settings =
+    const settings: SlicerSettingsDraft & { scalePercent?: string } =
       stored.settings && typeof stored.settings === "object"
-        ? stored.settings
+        ? { ...stored.settings }
         : {};
+    // Rascunho com a escala única: o valor vale para X, Y e Z.
+    if ("scalePercent" in settings) {
+      const legacy = settings.scalePercent ?? "";
+      delete settings.scalePercent;
+      settings.scaleX = legacy;
+      settings.scaleY = legacy;
+      settings.scaleZ = legacy;
+    }
     return { ...EMPTY_DRAFT, ...stored, settings };
   } catch {
     return null;
