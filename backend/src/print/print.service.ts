@@ -356,7 +356,9 @@ export class PrintService {
     const input = data.settings;
     const settings = {
       slicer: this.normalizeOptional(input?.slicer),
-      scalePercent: input?.scalePercent ?? null,
+      scaleX: input?.scaleX ?? null,
+      scaleY: input?.scaleY ?? null,
+      scaleZ: input?.scaleZ ?? null,
       layerHeightMm: input?.layerHeightMm ?? null,
       infillPercent: input?.infillPercent ?? null,
       infillPattern: this.normalizeOptional(input?.infillPattern),
@@ -401,7 +403,9 @@ export class PrintService {
     printerId,
     printerName,
     slicer,
-    scalePercent,
+    scaleX,
+    scaleY,
+    scaleZ,
     layerHeightMm,
     infillPercent,
     infillPattern,
@@ -427,7 +431,9 @@ export class PrintService {
       // Sem nenhum ajuste marcado, o registro não tem configuração.
       settings:
         slicer == null &&
-        scalePercent == null &&
+        scaleX == null &&
+        scaleY == null &&
+        scaleZ == null &&
         layerHeightMm == null &&
         infillPercent == null &&
         infillPattern == null &&
@@ -437,7 +443,9 @@ export class PrintService {
           ? null
           : {
               slicer,
-              scalePercent,
+              scaleX,
+              scaleY,
+              scaleZ,
               layerHeightMm,
               infillPercent,
               infillPattern,

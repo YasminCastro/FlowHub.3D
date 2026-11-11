@@ -50,7 +50,9 @@ const SELECT_OPTIONS: Partial<Record<SlicerSettingKey, string[]>> = {
 };
 
 const SUFFIXES: Partial<Record<SlicerSettingKey, string>> = {
-  scalePercent: "%",
+  scaleX: "%",
+  scaleY: "%",
+  scaleZ: "%",
   layerHeightMm: "mm",
   infillPercent: "%",
   walls: "",
@@ -58,12 +60,16 @@ const SUFFIXES: Partial<Record<SlicerSettingKey, string>> = {
 };
 
 const PLACEHOLDERS: Partial<Record<SlicerSettingKey, string>> = {
-  scalePercent: "100",
+  scaleX: "100",
+  scaleY: "100",
+  scaleZ: "100",
   layerHeightMm: "0,2",
   infillPercent: "15",
   walls: "2",
   temperatureC: "210",
 };
+
+const SCALE_KEYS: SlicerSettingKey[] = ["scaleX", "scaleY", "scaleZ"];
 
 // Inteiros no backend; os outros números aceitam casas decimais.
 const INTEGER_KEYS: SlicerSettingKey[] = [
@@ -109,7 +115,7 @@ export function slicerDraftProblem(draft: SlicerSettingsDraft) {
     const text = draft[key]?.trim() ?? "";
     const label = SLICER_SETTING_LABELS[key].toLowerCase();
     if (!text) return `Preencha ${label} ou remova o ajuste.`;
-    if (key === "scalePercent" && parseDecimal(text) <= 0)
+    if (SCALE_KEYS.includes(key) && parseDecimal(text) <= 0)
       return "A escala precisa ser maior que zero.";
   }
   return null;
@@ -132,6 +138,14 @@ export function SlicerSettingsFields({
   const chosen = Object.keys(value) as SlicerSettingKey[];
   const available = SLICER_SETTING_KEYS.filter((key) => !chosen.includes(key));
   const fields = chosen.filter((key) => key !== "extras");
+  // Escala é um ajuste só no menu, mas tem um campo por eixo.
+  const scaleAvailable = SCALE_KEYS.every((key) => available.includes(key));
+  const menuKeys = available.filter((key) => !SCALE_KEYS.includes(key));
+
+  function addScale() {
+    onChange({ ...value, scaleX: "", scaleY: "", scaleZ: "" });
+    setJustAdded("scaleX");
+  }
 
   function add(key: SlicerSettingKey) {
     const options = SELECT_OPTIONS[key];
@@ -248,7 +262,7 @@ export function SlicerSettingsFields({
           Marque só o que você mexeu no fatiador (ex.: escala, camada).
         </p>
       )}
-      {available.length > 0 && (
+      {(scaleAvailable || menuKeys.length > 0) && (
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
@@ -264,7 +278,12 @@ export function SlicerSettingsFields({
             Adicionar ajuste
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-auto min-w-44">
-            {available.map((key) => (
+            {scaleAvailable && (
+              <DropdownMenuItem onClick={addScale}>
+                Escala (X, Y, Z)
+              </DropdownMenuItem>
+            )}
+            {menuKeys.map((key) => (
               <DropdownMenuItem key={key} onClick={() => add(key)}>
                 {SLICER_SETTING_LABELS[key]}
               </DropdownMenuItem>

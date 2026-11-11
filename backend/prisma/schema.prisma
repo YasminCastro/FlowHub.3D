@@ -400,8 +400,10 @@ model PrintRecord {
   // Configuração do fatiador: cada campo é opcional (só vai o que o
   // usuário marcou); tudo null quando não informada.
   slicer        String?
-  // Escala do modelo no fatiador, em % (100 = tamanho original).
-  scalePercent  Float?
+  // Escala do modelo no fatiador por eixo, em % (100 = tamanho original).
+  scaleX        Float?
+  scaleY        Float?
+  scaleZ        Float?
   layerHeightMm Float?
   infillPercent Int?
   infillPattern String?

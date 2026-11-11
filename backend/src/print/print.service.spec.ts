@@ -76,7 +76,9 @@ describe('PrintService', () => {
       printerId,
       printerName: 'Bambu A1',
       slicer: 'Orca',
-      scalePercent: null,
+      scaleX: null,
+      scaleY: null,
+      scaleZ: null,
       layerHeightMm: 0.2,
       infillPercent: 15,
       infillPattern: 'giroide',
@@ -400,7 +402,9 @@ describe('PrintService', () => {
         itemRow([
           recordRow({
             slicer: null,
-            scalePercent: null,
+            scaleX: null,
+            scaleY: null,
+            scaleZ: null,
             layerHeightMm: null,
             infillPercent: null,
             infillPattern: null,
@@ -417,7 +421,9 @@ describe('PrintService', () => {
 
       expect(dataOf(prisma.printRecord.create)).toMatchObject({
         slicer: null,
-        scalePercent: null,
+        scaleX: null,
+        scaleY: null,
+        scaleZ: null,
         layerHeightMm: null,
         infillPercent: null,
         infillPattern: null,
@@ -433,7 +439,9 @@ describe('PrintService', () => {
         itemRow([
           recordRow({
             slicer: null,
-            scalePercent: 10,
+            scaleX: 10,
+            scaleY: 20,
+            scaleZ: 30,
             layerHeightMm: null,
             infillPercent: null,
             infillPattern: null,
@@ -445,12 +453,14 @@ describe('PrintService', () => {
 
       const result = await service.addRecord(itemId, userId, {
         ...record,
-        settings: { scalePercent: 10 },
+        settings: { scaleX: 10, scaleY: 20, scaleZ: 30 },
       });
 
       expect(dataOf(prisma.printRecord.create)).toMatchObject({
         slicer: null,
-        scalePercent: 10,
+        scaleX: 10,
+        scaleY: 20,
+        scaleZ: 30,
         layerHeightMm: null,
         infillPercent: null,
         infillPattern: null,
@@ -460,7 +470,9 @@ describe('PrintService', () => {
       });
       expect(result.data.records[0].settings).toEqual({
         slicer: null,
-        scalePercent: 10,
+        scaleX: 10,
+        scaleY: 20,
+        scaleZ: 30,
         layerHeightMm: null,
         infillPercent: null,
         infillPattern: null,

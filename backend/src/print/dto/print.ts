@@ -81,12 +81,24 @@ export class SlicerSettingsDto {
   @MaxLength(PRINT_SHORT_TEXT_MAX_LENGTH)
   slicer?: string | null;
 
-  // Escala do modelo, em % (100 = tamanho original).
+  // Escala do modelo por eixo, em % (100 = tamanho original).
   @IsOptional()
   @IsNumber()
   @Min(0.1)
   @Max(10000)
-  scalePercent?: number | null;
+  scaleX?: number | null;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0.1)
+  @Max(10000)
+  scaleY?: number | null;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0.1)
+  @Max(10000)
+  scaleZ?: number | null;
 
   @IsOptional()
   @IsNumber()

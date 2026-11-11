@@ -75,8 +75,10 @@ export type PrintPhoto = { id: string; src: string } & PhotoFraming;
 // marcou (null = não informado).
 export type SlicerSettings = {
   slicer: string | null;
-  // Escala do modelo, em % (100 = tamanho original).
-  scalePercent: number | null;
+  // Escala do modelo por eixo, em % (100 = tamanho original).
+  scaleX: number | null;
+  scaleY: number | null;
+  scaleZ: number | null;
   layerHeightMm: number | null;
   infillPercent: number | null;
   infillPattern: string | null;
@@ -159,7 +161,9 @@ export const SLICERS = [
 
 export const EMPTY_SLICER_SETTINGS: SlicerSettings = {
   slicer: null,
-  scalePercent: null,
+  scaleX: null,
+  scaleY: null,
+  scaleZ: null,
   layerHeightMm: null,
   infillPercent: null,
   infillPattern: null,
@@ -171,7 +175,9 @@ export const EMPTY_SLICER_SETTINGS: SlicerSettings = {
 // Os ajustes que dá para marcar, na ordem em que aparecem.
 export const SLICER_SETTING_KEYS: SlicerSettingKey[] = [
   "slicer",
-  "scalePercent",
+  "scaleX",
+  "scaleY",
+  "scaleZ",
   "layerHeightMm",
   "infillPercent",
   "infillPattern",
@@ -182,7 +188,9 @@ export const SLICER_SETTING_KEYS: SlicerSettingKey[] = [
 
 export const SLICER_SETTING_LABELS: Record<SlicerSettingKey, string> = {
   slicer: "Fatiador",
-  scalePercent: "Escala",
+  scaleX: "Escala X",
+  scaleY: "Escala Y",
+  scaleZ: "Escala Z",
   layerHeightMm: "Camada",
   infillPercent: "Preenchimento",
   infillPattern: "Padrão de preench.",
@@ -965,7 +973,9 @@ export function formatSlicerSetting(
   if (value == null) return "";
   if (typeof value === "string") return value;
   switch (key) {
-    case "scalePercent":
+    case "scaleX":
+    case "scaleY":
+    case "scaleZ":
     case "infillPercent":
       return `${formatDecimal(value)}%`;
     case "layerHeightMm":
@@ -977,11 +987,26 @@ export function formatSlicerSetting(
   }
 }
 
+// Escala por eixo: uniforme vira "escala 80%"; senão "escala X 80% · Y 100%".
+function formatScale(s: SlicerSettings) {
+  const axes = [
+    ["X", s.scaleX],
+    ["Y", s.scaleY],
+    ["Z", s.scaleZ],
+  ] as const;
+  const set = axes.filter(([, value]) => value != null);
+  if (!set.length) return null;
+  if (set.length === 3 && set.every(([, value]) => value === s.scaleX)) {
+    return `escala ${formatDecimal(s.scaleX!)}%`;
+  }
+  return `escala ${set.map(([axis, value]) => `${axis} ${formatDecimal(value!)}%`).join(" · ")}`;
+}
+
 // Resumo da configuração, sem o fatiador e os "Outros ajustes" (que
 // aparecem à parte).
 export function formatSettings(s: SlicerSettings) {
   return [
-    s.scalePercent != null ? `escala ${formatDecimal(s.scalePercent)}%` : null,
+    formatScale(s),
     s.layerHeightMm != null ? `${formatDecimal(s.layerHeightMm)} mm` : null,
     s.infillPercent != null || s.infillPattern
       ? [
