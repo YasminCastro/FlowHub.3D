@@ -342,7 +342,7 @@ export type PrintItemsPageQuery = {
   pageSize: number;
   sort: PrintPageSort;
   search?: string;
-  categoryId?: string;
+  categoryIds?: string[];
   recentFailure?: boolean;
 };
 
@@ -363,7 +363,9 @@ export async function listPrintItemsPage(query: PrintItemsPageQuery) {
     sort: query.sort,
   });
   if (query.search?.trim()) params.set("search", query.search.trim());
-  if (query.categoryId) params.set("categoryId", query.categoryId);
+  if (query.categoryIds?.length) {
+    params.set("categoryIds", query.categoryIds.join(","));
+  }
   if (query.recentFailure) params.set("recentFailure", "true");
   const data = (await apiFetch(`/print/page?${params}`)) as Omit<
     PrintItemsPage,

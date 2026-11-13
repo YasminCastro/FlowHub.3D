@@ -550,8 +550,10 @@ export class PrintService {
       const escaped = search.replace(/[\\%_]/g, (c) => `\\${c}`);
       conditions.push(Prisma.sql`i.name ILIKE ${`%${escaped}%`}`);
     }
-    if (query.categoryId) {
-      conditions.push(Prisma.sql`i."categoryId" = ${query.categoryId}`);
+    if (query.categoryIds?.length) {
+      conditions.push(
+        Prisma.sql`i."categoryId" IN (${Prisma.join(query.categoryIds)})`,
+      );
     }
     if (query.recentFailure) {
       const since = new Date(

@@ -296,9 +296,16 @@ export class PrintItemsPageQueryDto {
   @MaxLength(PRINT_NAME_MAX_LENGTH)
   search?: string;
 
+  // Vários ids separados por vírgula (?categoryIds=a,b): a peça entra se for de
+  // qualquer uma das categorias.
   @IsOptional()
-  @IsUUID()
-  categoryId?: string;
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.split(',').filter(Boolean) : value,
+  )
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsUUID('all', { each: true })
+  categoryIds?: string[];
 
   @IsOptional()
   @Transform(({ value }) => value === true || value === 'true')

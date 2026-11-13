@@ -8,10 +8,9 @@ import {
   ImagesIcon,
   Plus,
   Search,
-  Tag,
   TriangleAlert,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +24,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { CategoryFilter } from "@/components/prints/category-filter";
 import { PrintCard } from "@/components/prints/print-card";
 import { Stat, StatDivider } from "@/components/prints/print-bits";
 import { usePageHeaderAction } from "@/contexts/page-header-action-context";
@@ -49,7 +49,6 @@ const SORT_OPTIONS: { value: PrintPageSort; label: string }[] = [
   { value: "name-desc", label: "Nome (Z–A)" },
 ];
 
-const ALL_CATEGORIES = "all";
 // Múltiplo de 2, 3 e 4: fecha as linhas da grade em qualquer largura.
 const PAGE_SIZE = 24;
 // Espera parar de digitar antes de buscar no servidor.
@@ -143,9 +142,9 @@ export default function PrintsPage() {
   const { costs, loadError: costsError } = useCostContext();
   // Os filtros ficam salvos no navegador: voltam iguais ao atualizar a página.
   const [search, setSearch] = useStoredState("impressoes:search", "");
-  const [storedCategory, setCategoryFilter] = useStoredState(
-    "impressoes:category",
-    ALL_CATEGORIES,
+  const [storedCategories, setCategoryFilter] = useStoredState<string[]>(
+    "impressoes:categories",
+    [],
   );
   const [onlyRecentFailure, setOnlyRecentFailure] = useStoredState(
     "impressoes:recentFailure",
@@ -187,12 +186,15 @@ export default function PrintsPage() {
     };
   }, []);
 
-  // Categoria salva que não tem mais peças (ou foi excluída) mostra todas.
+  // Categorias salvas que não têm mais peças (ou foram excluídas) saem do filtro.
   const categories = summary?.categories ?? [];
-  const categoryFilter =
-    !summary || categories.some((c) => c.id === storedCategory)
-      ? storedCategory
-      : ALL_CATEGORIES;
+  const categoryFilter = useMemo(
+    () =>
+      summary
+        ? storedCategories.filter((id) => summary.categories.some((c) => c.id === id))
+        : storedCategories,
+    [summary, storedCategories],
+  );
 
   // A resposta guarda a consulta que a gerou: enquanto não bate com os filtros
   // atuais, a grade mostra a anterior esmaecida.
@@ -215,8 +217,7 @@ export default function PrintsPage() {
       pageSize: PAGE_SIZE,
       sort,
       search: debouncedSearch,
-      categoryId:
-        categoryFilter === ALL_CATEGORIES ? undefined : categoryFilter,
+      categoryIds: categoryFilter,
       recentFailure: onlyRecentFailure,
     })
       .then((result) => {
@@ -370,54 +371,11 @@ export default function PrintsPage() {
               className="w-60 pl-8"
             />
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  variant="outline"
-                  className={cn(
-                    categoryFilter !== ALL_CATEGORIES &&
-                      "border-brand bg-brand/10 text-brand",
-                  )}
-                >
-                  <Tag />
-                  {categoryFilter === ALL_CATEGORIES
-                    ? "Todas as categorias"
-                    : categories.find((c) => c.id === categoryFilter)?.name}
-                </Button>
-              }
-            />
-            <DropdownMenuContent
-              align="end"
-              className="max-h-72 w-56 overflow-y-auto"
-            >
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>Categoria</DropdownMenuLabel>
-                <DropdownMenuRadioGroup
-                  value={categoryFilter}
-                  onValueChange={(value) =>
-                    changeFilter(() => setCategoryFilter(value))
-                  }
-                >
-                  <DropdownMenuRadioItem
-                    value={ALL_CATEGORIES}
-                    className="data-checked:bg-brand/12 data-checked:text-brand"
-                  >
-                    Todas
-                  </DropdownMenuRadioItem>
-                  {categories.map((category) => (
-                    <DropdownMenuRadioItem
-                      key={category.id}
-                      value={category.id}
-                      className="data-checked:bg-brand/12 data-checked:text-brand"
-                    >
-                      {category.name}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <CategoryFilter
+            categories={categories}
+            selected={categoryFilter}
+            onChange={(ids) => changeFilter(() => setCategoryFilter(ids))}
+          />
           <Button
             variant="outline"
             aria-pressed={onlyRecentFailure}

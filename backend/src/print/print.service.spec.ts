@@ -868,7 +868,7 @@ describe('PrintService', () => {
       await service.getItemsPage(userId, {
         ...query,
         search: ' 50%_off ',
-        categoryId,
+        categoryIds: [categoryId],
         recentFailure: true,
         sort: 'name-desc',
       });
